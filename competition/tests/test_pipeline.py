@@ -66,11 +66,27 @@ def test_quality_report_json(paths):
 def test_stats_csv_and_json_consistent(paths):
     csv_path, json_path = paths["个人统计"]
     with open(csv_path, encoding="utf-8-sig") as f:
-        csv_rows = {r["学生编号"] + "@" + r["节点编号"]: r
-                    for r in csv.DictReader(f)}
+        reader = csv.DictReader(f)
+        csv_fieldnames = set(reader.fieldnames)
+        csv_rows = {r["学生编号"] + "@" + r["节点编号"]: r for r in reader}
     with open(json_path, encoding="utf-8") as f:
         json_rows = json.load(f)
     assert len(csv_rows) == len(json_rows) == 10
+    # 列完整性：JSON 派生的所有列必须存在于 CSV（列名取首行会静默丢列）
+    expected_cols = set()
+    for s in json_rows:
+        for theme, v in s["按主题"].items():
+            if isinstance(v, dict):
+                expected_cols |= {f"{theme}_得分", f"{theme}_满分", f"{theme}_得分率"}
+            else:
+                expected_cols.add(f"{theme}_口径")
+        for indicator in s["按指标"]:
+            expected_cols.add(f"{indicator}_得分率")
+    missing = expected_cols - csv_fieldnames
+    assert not missing, f"CSV 丢失列: {sorted(missing)}"
+    # 合成数据里第一行(E01@EN01)没有 T02I1 记录、第二行(E01@EN02)有——
+    # 此断言专门复现"首行列名丢列"条件
+    assert "T02I1_得分率" in csv_fieldnames
     for s in json_rows:
         key = s["学生编号"] + "@" + s["节点编号"]
         assert float(csv_rows[key]["得分"] or 0) == s["总体"]["得分"]

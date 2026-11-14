@@ -30,6 +30,16 @@ def _write_csv(path: Path, rows: List[Dict], fieldnames: List[str]) -> None:
         writer.writerows(rows)
 
 
+def _union_fieldnames(rows: List[Dict]) -> List[str]:
+    """并集列（保持首现顺序）。列名取第一行会静默丢弃后续行的独有列。"""
+    cols: List[str] = []
+    for row in rows:
+        for key in row:
+            if key not in cols:
+                cols.append(key)
+    return cols
+
+
 def valid_record_rows(clean_result) -> List[Dict]:
     """当前有效记录平铺（CSV 用）：含清洗口径字段与原始列."""
     rows = []
@@ -106,7 +116,7 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
     paths["字段映射"] = out / "field_mapping.csv"
 
     vr_rows = valid_record_rows(clean_result)
-    _write_csv(out / "valid_records.csv", vr_rows, list(vr_rows[0].keys()))
+    _write_csv(out / "valid_records.csv", vr_rows, _union_fieldnames(vr_rows))
     _write_json(out / "valid_records.json",
                 [evidence_mod.record_view(vr, dataset) for vr in clean_result.valid_records])
     paths["当前有效记录"] = [out / "valid_records.csv", out / "valid_records.json"]
@@ -115,11 +125,11 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
     paths["质量报告"] = out / "quality_report.json"
 
     flat = stats_flat_rows(stats_list)
-    _write_csv(out / "student_stats.csv", flat, list(flat[0].keys()))
+    _write_csv(out / "student_stats.csv", flat, _union_fieldnames(flat))
     _write_json(out / "student_stats.json", stats_list)
     paths["个人统计"] = [out / "student_stats.csv", out / "student_stats.json"]
 
-    _write_csv(out / "coverage.csv", coverage_rows, list(coverage_rows[0].keys()))
+    _write_csv(out / "coverage.csv", coverage_rows, _union_fieldnames(coverage_rows))
     paths["覆盖表"] = out / "coverage.csv"
 
     if samples:
@@ -201,7 +211,7 @@ def _write_samples(dataset, clean_result, out: Path, paths: Dict) -> None:
                     f"{h['记录编号']}v{h['修订版本']}得分{h['得分']}" for h in r["历史版本"]),
             })
     if q025_rows:
-        _write_csv(sample_dir / "q025_peer_records.csv", q025_rows, list(q025_rows[0].keys()))
+        _write_csv(sample_dir / "q025_peer_records.csv", q025_rows, _union_fieldnames(q025_rows))
         paths["Q025同伴记录"] = sample_dir / "q025_peer_records.csv"
 
     # D17 无记录样例（合法空结果）
