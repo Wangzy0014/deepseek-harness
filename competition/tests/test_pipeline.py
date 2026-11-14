@@ -75,3 +75,24 @@ def test_stats_csv_and_json_consistent(paths):
         assert float(csv_rows[key]["得分"] or 0) == s["总体"]["得分"]
         assert float(csv_rows[key]["满分"] or 0) == s["总体"]["满分"]
     assert csv_rows["E05@EN02"]["无记录"] == "8"
+
+
+def test_stats_flat_rows_expands_themes_dynamically():
+    """扁平化 CSV 的主题列按数据动态展开：非 T01—T03 的主题不得丢列."""
+    from study_companion.pipeline import stats_flat_rows
+
+    def bucket(score, full):
+        return {"已评分_计入统计": 1, "已评分_隔离": 0, "待评分": 0, "未作答": 0,
+                "无记录": 0, "得分": score, "满分": full}
+
+    fabricated = [{
+        "学生编号": "E01", "班级": "EC01", "节点编号": "EN01",
+        "总体": {**bucket(2, 3), "节点可用题数": 5}, "得分率": 2 / 3,
+        "按主题": {"T09": {**bucket(2, 3), "得分率": 2 / 3}},
+        "按指标": {"T09I1": {**bucket(2, 3), "得分率": 2 / 3}},
+    }]
+    rows = stats_flat_rows(fabricated)
+    assert rows[0]["T09_得分"] == 2
+    assert rows[0]["T09_满分"] == 3
+    assert rows[0]["T09_得分率"] == 2 / 3
+    assert rows[0]["T09I1_得分率"] == 2 / 3

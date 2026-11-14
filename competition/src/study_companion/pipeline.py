@@ -46,7 +46,12 @@ def valid_record_rows(clean_result) -> List[Dict]:
 
 
 def stats_flat_rows(stats_list: List[Dict]) -> List[Dict]:
-    """学生 x 节点统计平铺成一行一条（CSV 用）."""
+    """学生 x 节点统计平铺成一行一条（CSV 用）；主题列按数据动态展开."""
+    themes: List[str] = []
+    for s in stats_list:
+        for theme in s["按主题"]:
+            if theme not in themes:
+                themes.append(theme)
     flat = []
     for s in stats_list:
         base = {
@@ -63,7 +68,7 @@ def stats_flat_rows(stats_list: List[Dict]) -> List[Dict]:
             "无记录": s["总体"]["无记录"],
             "节点可用题数": s["总体"]["节点可用题数"],
         }
-        for theme in ("T01", "T02", "T03"):
+        for theme in themes:
             b = s["按主题"].get(theme)
             if isinstance(b, str):
                 base[f"{theme}_口径"] = b

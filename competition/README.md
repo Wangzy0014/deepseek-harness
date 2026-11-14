@@ -90,7 +90,7 @@ for vr in clean.valid_records:                       # 当前有效记录
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 52 项：加载/清洗/统计/覆盖/证据/管线/验收项
+python3 -m pytest tests/            # 57 项：加载/清洗/统计/覆盖/证据/管线/验收项/数据安全
 ```
 
 `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
