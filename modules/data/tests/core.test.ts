@@ -4,6 +4,15 @@ import { get_evidence, get_student_stats, prepare_dataset } from '../core.ts'
 import type { CsvRow, PreparedDataset } from '../types.ts'
 import { make_input, make_record } from './helpers.ts'
 
+test('unrecognized grading text stays a counted review item even when it matches an object property name', () => {
+  for (const status of ['constructor', '__proto__']) {
+    const ds = prepare_dataset(make_input([make_record({ 评分状态: status })]), { source_mode: 'fixture' })
+    assert.equal(ds.summary.grading_status_counts[status], 1)
+    assert.equal(ds.current[0]?.action, 'review')
+    assert.equal(ds.current[0]?.include_in_statistics, false)
+  }
+})
+
 function prepare(records: CsvRow[] = [make_record()]): PreparedDataset {
   return prepare_dataset(make_input(records), { source_mode: 'fixture', producer_version: 'test' })
 }

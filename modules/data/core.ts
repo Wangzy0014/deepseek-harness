@@ -196,9 +196,9 @@ function evaluateRecord(
 }
 
 function countStatuses(records: EvidenceRecord[]): Record<string, number> {
-  const counts: Record<string, number> = {}
-  for (const record of records) counts[record.grading_status] = (counts[record.grading_status] ?? 0) + 1
-  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => compareText(a, b)))
+  const counts = new Map<string, number>()
+  for (const record of records) counts.set(record.grading_status, (counts.get(record.grading_status) ?? 0) + 1)
+  return Object.fromEntries([...counts].sort(([a], [b]) => compareText(a, b)))
 }
 
 function recordOrder(a: EvidenceRecord, b: EvidenceRecord): number {

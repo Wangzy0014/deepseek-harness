@@ -1,0 +1,50 @@
+import { get_student_stats, prepare_dataset } from '../data/core.ts'
+import type { DatasetInput, EvidenceRecord, PreparedDataset, PrepareOptions } from '../data/types.ts'
+import { diagnose_student } from '../diagnosis/core.ts'
+
+/**
+ * Prepare a shared view and propagate explicit process-scoring review to every consumer.
+ * @param input - Literal local source tables.
+ * @param options - Origin and implementation version for the whole pipeline.
+ * @returns A derived current view; imported fields and historical versions remain intact.
+ */
+export function prepare_workspace_dataset(input: DatasetInput, options: PrepareOptions = {}): PreparedDataset {
+  const dataset = prepare_dataset(input, { ...options, producer_version: options.producer_version ?? 'study-companion@0.2.0' })
+  const additionalReviews = new Map<string, string[]>()
+  for (const student of dataset.input.students) {
+    for (const node of dataset.input.nodes) {
+      const scope = { student_id: student['学生编号']!, node_id: node['节点编号']! }
+      if (get_student_stats(dataset, scope).payload.record_count === 0) continue
+      const diagnosis = diagnose_student(dataset, scope)
+      for (const finding of diagnosis.payload.findings) {
+        if (finding.category !== 'scoring_review') continue
+        for (const id of finding.evidence_ids) {
+          const current = dataset.current.find(record => record.record_id === id)
+          if (current?.include_in_statistics) additionalReviews.set(id, [...(additionalReviews.get(id) ?? []), finding.description])
+        }
+      }
+    }
+  }
+  if (additionalReviews.size === 0) return dataset
+  const replacements = new Map<string, EvidenceRecord>()
+  for (const record of dataset.current) {
+    const messages = additionalReviews.get(record.record_id)
+    if (!messages) continue
+    replacements.set(record.record_id, {
+      ...record, include_in_statistics: false, action: 'review',
+      quality_issues: [...record.quality_issues, { code: 'semantic_scoring_review', message: [...new Set(messages)].join(' ') }],
+    })
+  }
+  const current = dataset.current.map(record => replacements.get(record.record_id) ?? record)
+  return {
+    ...dataset,
+    current,
+    history: dataset.history.map(record => replacements.get(record.record_id) ?? record),
+    summary: {
+      ...dataset.summary,
+      included_count: current.filter(record => record.action === 'include').length,
+      review_count: current.filter(record => record.action === 'review').length,
+      excluded_count: current.filter(record => record.action === 'exclude').length,
+    },
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "extends": "./data/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "typeRoots": ["./data/node_modules/@types"]
+  },
+  "include": ["shared/**/*.ts", "comparison/**/*.ts", "diagnosis/**/*.ts", "guidance/**/*.ts", "app/**/*.ts"],
+  "exclude": ["**/node_modules", "**/lib"]
+}

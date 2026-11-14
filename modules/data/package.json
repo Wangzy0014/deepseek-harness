@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.9.0" },
+  "engines": {
+    "node": ">=24.9.0"
+  },
   "scripts": {
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
@@ -11,10 +13,13 @@
     "build:check": "tsc --noEmit",
     "build": "npm run build:artifacts && npm run build:check"
   },
-  "dependencies": { "papaparse": "5.5.3" },
+  "dependencies": {
+    "papaparse": "5.5.3"
+  },
   "devDependencies": {
     "@types/node": "^22.20.1",
     "@types/papaparse": "^5.5.2",
+    "happy-dom": "21.0.4",
     "typescript": "^6.0.3"
   }
 }
