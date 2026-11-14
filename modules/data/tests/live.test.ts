@@ -68,11 +68,22 @@ test('the original competition snapshot satisfies the published team acceptance 
 test('differentiated policy numbers match the Python reference implementation', {
   skip: sourceDirectory && process.env.STUDY_DIFF_REFERENCE ? false : 'Set STUDY_DIFF_REFERENCE to the exported Python reference JSON.',
 }, async () => {
-  const reference: Record<string, { earned: number, possible: number, valid: number, excluded: number, pending: number, unanswered: number, no_record: number }>
+  const reference: Record<string, any>
     = JSON.parse(await import('node:fs').then(fs => fs.readFileSync(process.env.STUDY_DIFF_REFERENCE!, 'utf8')))
   const ds = prepare_dataset(await load_dataset(sourceDirectory!), { source_mode: 'live' })
+  // 观察层对拍（记录不足/未测量清单与 Python 参考一致）
+  if (reference.observations) {
+    const obs = (await import('../core.ts')).get_dataset_observations(ds).payload
+    assert.deepEqual(obs.unresolved_pending_ids, reference.observations.unresolved_pending_ids)
+    assert.deepEqual(obs.unmeasured_indicator_ids, reference.observations.unmeasured_indicator_ids)
+    assert.deepEqual(obs.node_students_without_records, reference.observations.node_students_without_records)
+    for (const [nodeId, expected] of Object.entries(reference.observations.node_item_gaps)) {
+      assert.deepEqual(obs.node_item_gaps[nodeId] ?? [], expected)
+    }
+  }
   const mismatches: string[] = []
   for (const [key, expected] of Object.entries(reference)) {
+    if (key === 'observations') continue
     const [studentId, nodeId] = key.split('@')
     if (!studentId || !nodeId) throw new Error(`bad key ${key}`)
     const stats = get_student_stats(ds, { student_id: studentId, node_id: nodeId })
