@@ -7,3 +7,4 @@ tests/_pipeline_out/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
