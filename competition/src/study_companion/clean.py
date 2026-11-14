@@ -126,7 +126,11 @@ def _diff_fields(old: AnswerRow, new: AnswerRow) -> Dict[str, List[str]]:
 
 
 def merge_versions(rows: List[AnswerRow]) -> Tuple[List[ValidRecord], List[MergeLogEntry]]:
-    """按作答事件编号归并：保留最高修订版本，其余进入 history."""
+    """按作答事件编号归并：保留最高修订版本，其余进入 history.
+
+    输出按记录编号规范排序（canonical order）：产物顺序与输入行序
+    彻底解耦——打乱输入行后所有产物逐字节一致（见 test_properties）。
+    """
     by_event: Dict[str, List[AnswerRow]] = {}
     for row in rows:
         by_event.setdefault(row.event_id, []).append(row)
@@ -157,6 +161,8 @@ def merge_versions(rows: List[AnswerRow]) -> Tuple[List[ValidRecord], List[Merge
             issues=[],
             history=superseded,
         ))
+    valid.sort(key=lambda vr: vr.record.record_id)
+    log.sort(key=lambda entry: entry.event_id)
     return valid, log
 
 

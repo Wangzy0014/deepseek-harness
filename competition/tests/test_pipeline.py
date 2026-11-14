@@ -113,3 +113,57 @@ def test_stats_flat_rows_expands_themes_dynamically():
     assert rows[0]["T09_满分"] == 3
     assert rows[0]["T09_得分率"] == 2 / 3
     assert rows[0]["T09I1_得分率"] == 2 / 3
+
+
+def test_determinism_shuffle_inputs_byte_identical(tmp_path):
+    """规范化排序证明：打乱输入行序，除 _meta.json 外全部产物逐字节一致."""
+    import csv as _csv
+    import shutil as _shutil
+
+    from study_companion.pipeline import run_pipeline
+
+    def shuffle_records(seed):
+        target = tmp_path / f"shuffled{seed}"
+        target.mkdir()
+        for name in ["课程要求.csv", "题目与材料.csv", "模拟学生.csv",
+                     "测验节点.csv", "字段说明.csv"]:
+            _shutil.copy(FIXTURES / name, target / name)
+        import random
+        with open(FIXTURES / "作答记录.csv", encoding="utf-8-sig", newline="") as f:
+            rows = list(_csv.reader(f))
+        header, body = rows[0], rows[1:]
+        random.Random(seed).shuffle(body)
+        with open(target / "作答记录.csv", "w", encoding="utf-8-sig", newline="") as f:
+            writer = _csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(body)
+        return target
+
+    run_pipeline(FIXTURES, tmp_path / "out_orig")
+    for seed in (1, 42):
+        run_pipeline(shuffle_records(seed), tmp_path / f"out_s{seed}")
+        for produced in (tmp_path / "out_orig").rglob("*"):
+            if not produced.is_file() or produced.name == "_meta.json":
+                continue
+            rel = produced.relative_to(tmp_path / "out_orig")
+            other = tmp_path / f"out_s{seed}" / rel
+            assert other.exists(), f"缺文件 {rel}"
+            assert produced.read_bytes() == other.read_bytes(), \
+                f"seed={seed} 打乱行序后产物不一致: {rel}"
+
+    # 数据指纹真实生效：打乱后的数据文件哈希必须不同
+    meta_orig = json.load(open(tmp_path / "out_orig" / "_meta.json"))
+    meta_shuf = json.load(open(tmp_path / "out_s1" / "_meta.json"))
+    h1 = meta_orig["数据文件"]["作答记录.csv"]["sha256"]
+    h2 = meta_shuf["数据文件"]["作答记录.csv"]["sha256"]
+    assert h1 != h2 and len(h1) == 64
+
+
+def test_meta_sidecar_fields(tmp_path):
+    from study_companion.pipeline import run_pipeline
+    paths = run_pipeline(FIXTURES, tmp_path / "out_meta")
+    meta = json.load(open(paths["生成元数据"]))
+    assert meta["处置策略"] == "repair_consistent_points"
+    assert meta["原始行数"] == 15 and meta["归并后事件数"] == 13
+    assert set(meta["数据文件"]) >= {"作答记录.csv", "题目与材料.csv"}
+    assert meta["数据文件"]["作答记录.csv"]["行数"] == 15

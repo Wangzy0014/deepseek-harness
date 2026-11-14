@@ -37,3 +37,16 @@ def test_summary_lines(dataset, clean):
     lines = "\n".join(report.summary_lines())
     assert "原始行数 15 -> 归并后事件数 13" in lines
     assert "异常记录共 5 条" in lines
+
+
+def test_observations_layer(dataset, clean):
+    """数据观察：记录不足/未测量的机器化清单（不改统计口径）."""
+    report = build_quality_report(dataset, clean)
+    obs = report.to_dict()["数据观察"]
+    assert obs["未决待评分"] == ["XR0013"]
+    assert obs["节点_题目_无有效作答"]["EN01"] == ["QX04", "QX06"]
+    assert obs["节点_题目_无有效作答"]["EN02"] == [
+        "QX02", "QX04", "QX05", "QX06", "QX07", "QX08"]
+    assert obs["指标_零覆盖"] == ["T03I1"]          # T03 仅有的题全被隔离
+    assert obs["节点_学生_零记录"] == {"EN02": ["E04", "E05"]}
+    assert "不得解释为未掌握" in obs["解读提示"]

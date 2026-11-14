@@ -38,7 +38,8 @@ class QualityReport:
     flag_counts: Dict[str, int]
     anomaly_records: List[Dict]
     merge_entries: List[Dict]
-    policy: str = "conservative"
+    policy: str = "repair_consistent_points"
+    observations: Optional[Dict] = None
 
     def to_dict(self) -> Dict:
         return {
@@ -50,6 +51,7 @@ class QualityReport:
             "统计口径分布": self.flag_counts,
             "异常记录": self.anomaly_records,
             "版本归并明细": self.merge_entries,
+            "数据观察": self.observations or {},
         }
 
     def summary_lines(self) -> List[str]:
@@ -109,4 +111,63 @@ def build_quality_report(dataset: Dataset, clean: CleanResult,
         anomaly_records=anomalies,
         merge_entries=[entry.to_dict() for entry in clean.merge_log],
         policy=policy,
+        observations=build_observations(dataset, clean),
     )
+
+
+def build_observations(dataset: Dataset, clean: CleanResult) -> Dict:
+    """非阻塞数据观察：记录不足 / 未测量，供"暂不能确定的内容"说明用.
+
+    与异常处置（阻塞、改口径）不同，观察不改任何统计——只把
+    "哪里信息不足、不能下结论"机器化地列出来（任务二要求）。
+    """
+    # 1) 未决待评分：归并后仍待评分的当前记录（分数悬而未决）
+    unresolved_pending = sorted(
+        vr.record.record_id for vr in clean.valid_records
+        if vr.record.scoring_status == PENDING)
+
+    # 2) 节点×题目：可用但无任何计入统计作答（按节点分别判断——
+    #    某题在 A 节点有有效作答不代表 B 节点不缺）
+    in_stats = {(vr.record.node_id, vr.record.material_id)
+                for vr in clean.valid_records
+                if vr.record.scoring_status == SCORED and vr.stats_flag in
+                {FLAG_NORMAL, FLAG_CORRECTED, FLAG_REVIEW_KEPT}}
+    question_gaps = {}
+    for node_id in sorted(dataset.nodes):
+        node = dataset.node(node_id)
+        gaps = sorted(q for q in node.available_questions
+                      if (node_id, q) not in in_stats)
+        if gaps:
+            question_gaps[node_id] = gaps
+
+    # 3) 指标零覆盖：课程要求的观察指标中没有任何有效作答测量过的
+    measured = set()
+    for vr in clean.valid_records:
+        if vr.record.scoring_status == SCORED and vr.stats_flag in \
+                {FLAG_NORMAL, FLAG_CORRECTED, FLAG_REVIEW_KEPT}:
+            question = dataset.question(vr.record.material_id)
+            if question is not None and question.indicator_id:
+                measured.add(question.indicator_id)
+    unmeasured_indicators = sorted(
+        set(dataset.indicators()) - measured)
+
+    # 4) 学生×节点零记录：记录不足案例线索（不得推断为未掌握）
+    students_with_records = {}
+    for vr in clean.valid_records:
+        students_with_records.setdefault(vr.record.node_id, set()).add(
+            vr.record.student_id)
+    no_record_cases = {}
+    for node_id in sorted(dataset.nodes):
+        missing = sorted(set(dataset.students) -
+                         students_with_records.get(node_id, set()))
+        if missing:
+            no_record_cases[node_id] = missing
+
+    return {
+        "未决待评分": unresolved_pending,
+        "节点_题目_无有效作答": question_gaps,
+        "指标_零覆盖": unmeasured_indicators,
+        "节点_学生_零记录": no_record_cases,
+        "解读提示": "以上为信息不足清单，不参与统计口径；分析时须注明"
+                    "'暂不能确定'，不得解释为未掌握或全部掌握。",
+    }

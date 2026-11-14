@@ -49,7 +49,7 @@ cd competition
 # 2) 自检（验收口径：806 行 -> 799 事件；6 条已知冲突全部识别）
 python3 -m study_companion check            # 需 PYTHONPATH=src（见下）
 
-# 3) 全流程产物 -> outputs/（字段映射、当前有效记录、质量报告、统计、覆盖、样例）
+# 3) 全流程产物 -> outputs/（字段映射、当前有效记录、质量报告含数据观察、统计、覆盖、样例、_meta.json 数据指纹）
 PYTHONPATH=src python3 -m study_companion pipeline
 
 # 4) 常用查询
@@ -98,7 +98,7 @@ for vr in clean.valid_records:                       # 当前有效记录
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 476 项：固定样例 75 + 随机性质测试 401
+python3 -m pytest tests/            # 479 项：固定样例 78 + 随机性质测试 401
 ```
 
 - `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、

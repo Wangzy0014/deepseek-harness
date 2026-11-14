@@ -92,19 +92,60 @@ def stats_flat_rows(stats_list: List[Dict]) -> List[Dict]:
     return flat
 
 
+def _file_fingerprint(path: Path) -> Dict:
+    import csv as _csv
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    # 逻辑行数须按 csv 解析：多行单元格（如解答过程）会让物理行数虚高
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = sum(1 for _ in _csv.reader(f)) - 1
+    return {"sha256": digest.hexdigest(), "行数": max(rows, 0)}
+
+
+def _write_meta(data_dir: Path, out: Path, policy: str,
+                clean_result) -> Path:
+    """数据指纹与生成上下文：证明产物来自哪份数据与哪种口径.
+
+    验收书"统一数据与代码版本、在干净输出目录重跑"的核对地基：
+    记录每个输入文件的 SHA256 与行数、处置策略、代码版本、行/事件数。
+    """
+    import datetime
+    from . import __version__
+    from .config import DATA_FILES
+
+    files = {}
+    for name in DATA_FILES.values():
+        path = Path(data_dir) / name
+        if path.exists():
+            files[name] = _file_fingerprint(path)
+    payload = {
+        "生成时间": datetime.datetime.now().isoformat(timespec="seconds"),
+        "代码版本": __version__,
+        "处置策略": policy,
+        "原始行数": clean_result.row_count,
+        "归并后事件数": clean_result.event_count,
+        "数据文件": files,
+    }
+    path = out / "_meta.json"
+    _write_json(path, payload)
+    return path
+
+
 def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
                  repair_consistent_points: bool = True) -> Dict:
     """全流程运行并写出全部交付文件，返回产物路径表.
 
-    repair_consistent_points：处置策略开关（方案 B），默认关闭（方案 A）。
+    repair_consistent_points：False 时退回保守全隔离（默认差异化处置）。
     """
     dataset = load_all(data_dir)
     clean_result = clean_mod.build_valid_records(
         dataset, repair_consistent_points=repair_consistent_points)
-    report = build_quality_report(
-        dataset, clean_result,
-        policy="repair_consistent_points" if repair_consistent_points
-        else "conservative")
+    policy = "repair_consistent_points" if repair_consistent_points \
+        else "conservative"
+    report = build_quality_report(dataset, clean_result, policy=policy)
     stats_list = stats_mod.all_students_stats(dataset, clean_result)
     coverage_rows = coverage_mod.coverage_table(dataset, clean_result)
 
@@ -135,6 +176,7 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
     if samples:
         _write_samples(dataset, clean_result, out, paths)
 
+    paths["生成元数据"] = _write_meta(data_dir, out, policy, clean_result)
     return paths
 
 
