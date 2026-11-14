@@ -82,11 +82,19 @@ def stats_flat_rows(stats_list: List[Dict]) -> List[Dict]:
     return flat
 
 
-def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True) -> Dict:
-    """全流程运行并写出全部交付文件，返回产物路径表."""
+def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
+                 repair_consistent_points: bool = False) -> Dict:
+    """全流程运行并写出全部交付文件，返回产物路径表.
+
+    repair_consistent_points：处置策略开关（方案 B），默认关闭（方案 A）。
+    """
     dataset = load_all(data_dir)
-    clean_result = clean_mod.build_valid_records(dataset)
-    report = build_quality_report(dataset, clean_result)
+    clean_result = clean_mod.build_valid_records(
+        dataset, repair_consistent_points=repair_consistent_points)
+    report = build_quality_report(
+        dataset, clean_result,
+        policy="repair_consistent_points" if repair_consistent_points
+        else "conservative")
     stats_list = stats_mod.all_students_stats(dataset, clean_result)
     coverage_rows = coverage_mod.coverage_table(dataset, clean_result)
 

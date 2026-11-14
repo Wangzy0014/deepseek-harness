@@ -26,6 +26,7 @@ ISSUE_LABELS = {
     "node_out_of_scope": "材料超出节点可用范围",
     "semantic_review": "答案与参考答案一致但记0分（语义复核）",
     "full_score_mismatch_bank": "记录满分与题库不一致",
+    "score_repaired_from_points": "得分按评分点合计修正（策略B）",
 }
 
 
@@ -38,12 +39,14 @@ class QualityReport:
     flag_counts: Dict[str, int]
     anomaly_records: List[Dict]
     merge_entries: List[Dict]
+    policy: str = "conservative"
 
     def to_dict(self) -> Dict:
         return {
             "原始行数": self.row_count,
             "归并后事件数": self.event_count,
             "被归并版本数": self.superseded_count,
+            "处置策略": self.policy,
             "评分状态分布": self.status_counts,
             "统计口径分布": self.flag_counts,
             "异常记录": self.anomaly_records,
@@ -67,7 +70,8 @@ class QualityReport:
         return lines
 
 
-def build_quality_report(dataset: Dataset, clean: CleanResult) -> QualityReport:
+def build_quality_report(dataset: Dataset, clean: CleanResult,
+                         policy: str = "conservative") -> QualityReport:
     status_counts = {SCORED: 0, PENDING: 0, UNANSWERED: 0}
     flag_counts = {FLAG_NORMAL: 0, FLAG_CORRECTED: 0,
                    FLAG_REVIEW_KEPT: 0, FLAG_EXCLUDED: 0}
@@ -105,4 +109,5 @@ def build_quality_report(dataset: Dataset, clean: CleanResult) -> QualityReport:
         flag_counts=flag_counts,
         anomaly_records=anomalies,
         merge_entries=[entry.to_dict() for entry in clean.merge_log],
+        policy=policy,
     )

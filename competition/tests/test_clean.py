@@ -105,3 +105,43 @@ def test_normalize_answer():
     assert normalize_answer(" -5ab² ") == normalize_answer("-5ab²")
     assert normalize_answer("－5ab²") == normalize_answer("-5ab²")  # 全角负号归一
     assert normalize_answer("5ab²") != normalize_answer("-5ab²")
+
+
+def test_policy_b_repairs_consistent_points(tmp_path, dataset):
+    """策略B：得分超满分且评分点合计==满分 -> 按评分点合计修正（corrected）.
+
+    构造一条 4/3、评分点 1+1+1 的记录（E03@EN02）：默认隔离，开策略后修正为 3。
+    同时验证评分点合计!=满分的记录在策略B下仍隔离（无法仲裁）。
+    """
+    import shutil
+    from conftest import FIXTURES
+    from study_companion.load import load_all
+    from study_companion.clean import build_valid_records, ISSUE_SCORE_REPAIRED_FROM_POINTS
+    from study_companion.schema import FLAG_CORRECTED
+
+    for name in ["课程要求.csv", "题目与材料.csv", "模拟学生.csv",
+                 "测验节点.csv", "字段说明.csv"]:
+        shutil.copy(FIXTURES / name, tmp_path / name)
+    lines = open(FIXTURES / "作答记录.csv", encoding="utf-8-sig").read().splitlines()
+    # E02 @ EN02 QX08：4/3 且评分点合计 3（==满分，策略B可修正）
+    lines.append("XR0100,E03,QX08,T03,EN02,E03-EN02-QX08,1,"
+                 "2026-06-17T15:00:00+08:00,已评分,4,3,x<2,1. 步骤一,"
+                 "QX08P1=1；QX08P2=1；QX08P3=1")
+    open(tmp_path / "作答记录.csv", "w", encoding="utf-8-sig",
+         newline="").write("\n".join(lines) + "\n")
+
+    ds = load_all(tmp_path)
+    by_id_a = {vr.record.record_id: vr
+               for vr in build_valid_records(ds).valid_records}
+    assert by_id_a["XR0100"].stats_flag == "excluded"      # 策略A：隔离
+    assert by_id_a["XR0100"].effective_score is None
+
+    by_id_b = {vr.record.record_id: vr
+               for vr in build_valid_records(ds, repair_consistent_points=True).valid_records}
+    repaired = by_id_b["XR0100"]
+    assert repaired.stats_flag == FLAG_CORRECTED            # 策略B：修正
+    assert repaired.effective_score == 3
+    assert ISSUE_SCORE_REPAIRED_FROM_POINTS in repaired.issues
+    # XR0009（总分3、评分点合计2、满分3：合计!=满分）策略B下仍隔离
+    assert by_id_b["XR0009"].stats_flag == "excluded"
+    assert by_id_b["XR0009"].effective_score is None

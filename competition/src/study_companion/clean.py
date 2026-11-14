@@ -45,6 +45,7 @@ ISSUE_TOTAL_POINTS_MISMATCH = "total_points_mismatch"
 ISSUE_NODE_OUT_OF_SCOPE = "node_out_of_scope"
 ISSUE_SEMANTIC_REVIEW = "semantic_review"
 ISSUE_FULL_MISMATCH_BANK = "full_score_mismatch_bank"
+ISSUE_SCORE_REPAIRED_FROM_POINTS = "score_repaired_from_points"
 
 # 处置规则与依据（写入质量报告，保证可追溯）
 DISPOSITIONS = {
@@ -55,6 +56,11 @@ DISPOSITIONS = {
     ISSUE_SCORE_EXCEEDS_FULL: {
         "处置": "隔离（excluded）：不参与得分统计，证据保留待人工复核",
         "依据": "验收书：得分超出满分不能直接进入统计；总分与分项均无法仲裁真值",
+    },
+    ISSUE_SCORE_REPAIRED_FROM_POINTS: {
+        "处置": "按评分点合计修正得分（corrected）：评分点合计与满分一致时，"
+                "以评分点合计为有效得分（需开启 repair_consistent_points 策略）",
+        "依据": "评分点合计==满分构成自洽证据链，总分疑为誊录错误；策略由全队拍板",
     },
     ISSUE_TOTAL_POINTS_MISMATCH: {
         "处置": "隔离（excluded）：不参与得分统计，证据保留待人工复核",
@@ -162,8 +168,14 @@ def normalize_answer(text: str) -> str:
     return "".join(text.split()).lower()
 
 
-def detect_issues(vr: ValidRecord, dataset: Dataset) -> ValidRecord:
-    """对单条当前记录识别异常并给出统计口径处置."""
+def detect_issues(vr: ValidRecord, dataset: Dataset,
+                  repair_consistent_points: bool = False) -> ValidRecord:
+    """对单条当前记录识别异常并给出统计口径处置.
+
+    repair_consistent_points=True 时启用"评分点自洽修正"策略（全队拍板的
+    备选方案 B）：得分超出满分、但评分点合计恰好等于满分时，以评分点
+    合计为有效得分（corrected），不再隔离。默认关闭（方案 A，保守隔离）。
+    """
     row = vr.record
     question = dataset.question(row.material_id)
     node = dataset.node(row.node_id)
@@ -201,9 +213,17 @@ def detect_issues(vr: ValidRecord, dataset: Dataset) -> ValidRecord:
             and normalize_answer(row.final_answer) != ""):
         issues.append(ISSUE_SEMANTIC_REVIEW)
 
-    vr.issues = issues
-    # 口径：隔离 > 修正 > 复核保留 > 正常
-    if ISSUE_SCORE_EXCEEDS_FULL in issues or ISSUE_TOTAL_POINTS_MISMATCH in issues \
+    # 口径：隔离 > 评分点自洽修正 > 修正 > 复核保留 > 正常
+    if (ISSUE_SCORE_EXCEEDS_FULL in issues
+            and repair_consistent_points
+            and row.point_scores
+            and row.full_score is not None
+            and sum(row.point_scores.values()) == row.full_score):
+        # 方案 B：评分点合计==满分 -> 以评分点合计为准（corrected）
+        issues.append(ISSUE_SCORE_REPAIRED_FROM_POINTS)
+        vr.effective_score = sum(row.point_scores.values())
+        vr.stats_flag = FLAG_CORRECTED
+    elif ISSUE_SCORE_EXCEEDS_FULL in issues or ISSUE_TOTAL_POINTS_MISMATCH in issues \
             or ISSUE_NODE_OUT_OF_SCOPE in issues:
         vr.stats_flag = FLAG_EXCLUDED
         vr.effective_score = None
@@ -213,13 +233,19 @@ def detect_issues(vr: ValidRecord, dataset: Dataset) -> ValidRecord:
         vr.stats_flag = FLAG_REVIEW_KEPT
     else:
         vr.stats_flag = FLAG_NORMAL
+    vr.issues = issues
     return vr
 
 
-def build_valid_records(dataset: Dataset) -> CleanResult:
-    """统一清洗入口：全队唯一入口，返回当前有效记录 + 归并日志."""
+def build_valid_records(dataset: Dataset,
+                        repair_consistent_points: bool = False) -> CleanResult:
+    """统一清洗入口：全队唯一入口，返回当前有效记录 + 归并日志.
+
+    repair_consistent_points：见 detect_issues docstring（默认方案 A 保守隔离）。
+    """
     valid, log = merge_versions(dataset.rows)
-    valid = [detect_issues(vr, dataset) for vr in valid]
+    valid = [detect_issues(vr, dataset, repair_consistent_points)
+             for vr in valid]
     return CleanResult(
         valid_records=valid,
         merge_log=log,

@@ -24,11 +24,15 @@ FORBIDDEN_CONTENT = ["-3x²y", "x>-4", "两边同乘", "5x-1=24", "解不等式"
 
 GUARDED_DIRS = [
     COMPETITION_DIR / "shared",
+    COMPETITION_DIR / "docs",
+    COMPETITION_DIR / "deliverables",
 ]
 GUARDED_FILES = [
     COMPETITION_DIR / "README.md",
     COMPETITION_DIR / "shared" / "README.md",
     COMPETITION_DIR / "data" / "raw" / "README.md",
+    COMPETITION_DIR / "docs" / "design_doc_data_section.md",
+    COMPETITION_DIR / "deliverables" / "README.md",
 ]
 
 

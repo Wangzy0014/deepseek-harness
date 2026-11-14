@@ -27,13 +27,16 @@ from .quality import build_quality_report
 def _ctx(args):
     data_dir = resolve_data_dir(getattr(args, "data_dir", None))
     dataset = load_all(data_dir)
-    clean_result = clean_mod.build_valid_records(dataset)
+    clean_result = clean_mod.build_valid_records(
+        dataset,
+        repair_consistent_points=getattr(args, "repair_points", False))
     return dataset, clean_result
 
 
 def cmd_pipeline(args) -> int:
     output_dir = resolve_output_dir(args.output_dir)
-    paths = run_pipeline(resolve_data_dir(args.data_dir), output_dir)
+    paths = run_pipeline(resolve_data_dir(args.data_dir), output_dir,
+                         repair_consistent_points=args.repair_points)
     print(f"完成，产物写入 {output_dir}:")
     for name, p in paths.items():
         if isinstance(p, list):
@@ -139,6 +142,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="study_companion",
         description="智慧学伴 · 数据处理与个人统计（负责人：魏文宇）")
     parser.add_argument("--data-dir", help="赛题数据目录（默认 competition/data/raw）")
+    parser.add_argument("--repair-points", action="store_true",
+                        help="处置策略B：得分超满分但评分点合计==满分时按评分点合计修正"
+                             "（默认策略A：隔离。切换前需全队拍板）")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("pipeline", help="全流程运行并写出 outputs/")
