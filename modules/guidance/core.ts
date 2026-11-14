@@ -3,7 +3,8 @@ import { get_student_stats } from '../data/core.ts'
 import type { CsvRow, PreparedDataset, ResultEnvelope, StudentScope } from '../data/types.ts'
 import { diagnose_student } from '../diagnosis/core.ts'
 import type { DiagnosisPayload } from '../diagnosis/core.ts'
-import type { HintPayload, HintRequest, LearningActivity, LearningPlanPayload } from './types.ts'
+import { guidance_for } from './knowledge.ts'
+import type { EvidenceGap, HintPayload, HintRequest, LearningActivity, LearningPlanPayload, PlanCertainty } from './types.ts'
 
 function result<T>(
   dataset: PreparedDataset, scope: Record<string, string | boolean>, payload: T,
@@ -36,7 +37,8 @@ function skillFamily(item: CsvRow | undefined, requirement: CsvRow | undefined):
   return 'general'
 }
 
-function methodHint(family: ReturnType<typeof skillFamily>, level: 1 | 2 | 3): string {
+function methodHint(family: ReturnType<typeof skillFamily>, level: 1 | 2 | 3, indicatorId?: string): string {
+  if (indicatorId && guidance_for(indicatorId).hints[level - 1]) return guidance_for(indicatorId).hints[level - 1]!
   const hints = {
     inequality: [
       '先找出不等关系和未知量，检查准备对两边进行什么运算。',
@@ -82,6 +84,7 @@ export function build_learning_plan(
   const stats = get_student_stats(dataset, scope)
   const payload: LearningPlanPayload = {
     engine: 'local_rules', ...scope, plan_type: 'blocked', diagnosis_status: diagnosis.result_status,
+    certainty: 'insufficient', summary: '计划尚未生成，需先核对统计和诊断状态。', evidence_gaps: [],
     statistics: stats.payload, activities: [], review_record_ids: stats.payload.review_record_ids,
   }
   if (stats.result_status === 'error' || diagnosis.result_status === 'error') {
@@ -118,6 +121,18 @@ export function build_learning_plan(
   payload.plan_type = planType
   const limitations = ['本计划由本地规则生成，未调用远程大模型；建议依据指定节点已有表现，不代表真实教学成效。']
   const ordered = [...dataset.input.requirements].sort((a, b) => compareText(a['指标编号'] ?? '', b['指标编号'] ?? ''))
+  const evidenceGaps: EvidenceGap[] = ordered.filter(requirement => taughtTopics.has(requirement['主题编号'] ?? '')
+    && !scoredIndicators.some(indicator => indicator.indicator_id === requirement['指标编号']))
+    .map(requirement => ({ indicator_id: requirement['指标编号']!, topic_id: requirement['主题编号']!, reason: '该已教指标在当前节点没有可用于本计划的已评分证据，先补充观察，不判定未掌握。' }))
+  payload.evidence_gaps = evidenceGaps
+  const certainty: PlanCertainty = valid.length === 0 ? 'insufficient'
+    : planType === 'observation' || valid.length < 3 ? 'provisional' : 'adequate'
+  payload.certainty = certainty
+  payload.summary = planType === 'targeted_practice'
+    ? `当前节点有 ${valid.length} 条有效证据，优先处理出现失分的指标，并按题目顺序完成复盘、练习与检查。`
+    : planType === 'extension'
+      ? `当前节点已教指标均有有效表现，安排解释、检验和迁移；该表现不等同于长期掌握。`
+      : `当前节点证据不足或存在未覆盖的已教指标，先补充观察，不把缺记录解释为未掌握。`
   const priorities: Array<{ requirement: CsvRow; kind: LearningActivity['kind']; evidence: string[]; rationale: string }> = []
   for (const requirement of ordered) {
     const indicatorId = requirement['指标编号'] ?? ''
@@ -150,6 +165,9 @@ export function build_learning_plan(
         ?? candidates.find(item => partialItems.has(item['材料编号']!)) ?? candidates[0]
       : candidates.find(item => !valid.some(record => record.item_id === item['材料编号'])) ?? candidates[0]
     if (!chosen) continue
+    const maxItems = kind === 'observation' ? 2 : 3
+    const sequence = [chosen['材料编号']!, ...candidates.filter(item => item['材料编号'] !== chosen['材料编号']).slice(0, maxItems - 1).map(item => item['材料编号']!)]
+    const guidance = guidance_for(indicatorId)
     const curriculum = diagnosis.payload.curriculum.find(entry => entry.indicator_id === indicatorId)
     const materialIds = new Set(curriculum?.material_ids ?? [])
     for (const material of dataset.input.items) {
@@ -161,15 +179,20 @@ export function build_learning_plan(
     const activity: LearningActivity = {
       activity_id: `activity-${payload.activities.length + 1}`, order: payload.activities.length + 1, kind,
       goal: kind === 'targeted_practice' ? `核对并巩固：${label}` : kind === 'extension' ? `解释并检验：${label}` : `补充观察：${label}`,
-      indicator_id: indicatorId, topic_id: topicId, item_ids: [chosen['材料编号']!], material_ids: availableMaterialIds,
+      indicator_id: indicatorId, topic_id: topicId, item_ids: sequence, material_ids: availableMaterialIds,
       evidence_ids: evidence, rationale,
-      prompt: kind === 'extension' ? '先独立完成所列题目，再解释每一步依据，用另一种检查方法检验结果。'
-        : kind === 'observation' ? '先独立完成所列题目并保留步骤；需要提示时说明使用到哪一级，供教师区分独立完成与借助提示完成。'
-          : '先对照已有作答核对失分位置，再完成所列练习；每次只看一级提示，保留修正前后的步骤。',
-      observation: '记录答案、关键步骤、分点评分和实际使用的提示等级；不要仅记录是否完成。',
-      adjust_when: kind === 'extension' ? '若解释或检验暴露新问题，记录新作答后重新诊断；若表现稳定，再由教师选择新的同范围任务。'
-        : kind === 'observation' ? '得到新的有效作答与评分后重新运行同节点诊断；未取得记录前保持“证据不足”。'
-          : '若能独立说明依据并完成相同指标的练习，再减少提示；若错误重复，保留新证据并由教师调整讲解。',
+      prompt: kind === 'extension' ? '按所列顺序独立完成，再解释每一步依据，并用另一种方法检验结果。'
+        : kind === 'observation' ? '按所列顺序独立完成并保留步骤；需要提示时说明使用到哪一级，供教师区分独立完成与借助提示完成。'
+          : '先对照已有作答核对失分位置，再按所列顺序完成复盘、练习与检查；每次只看一级提示。',
+      observation: guidance.observation.join('；'),
+      adjust_when: guidance.adjustment.join(''),
+      success_criteria: [...guidance.success_criteria],
+      next_if_success: kind === 'extension' ? '记录解释和检验证据；若仍稳定，再由教师选择新的同范围任务。'
+        : kind === 'observation' ? '再补一题同指标变式；仍能独立完成后才记为初步掌握。'
+          : '减少提示层级，完成同指标变式并说明依据。',
+      next_if_not: kind === 'extension' ? '保留本次证据并重新诊断；针对首次卡点安排同结构任务。'
+        : kind === 'observation' ? '记录提示层级与卡点，进入该指标的小步辅导。'
+          : '回到对应学习卡，降低一个认知步骤并保留新作答供教师调整。',
     }
     payload.activities.push(activity)
   }
@@ -207,7 +230,7 @@ export function get_hint(dataset: PreparedDataset, request: HintRequest): Result
   const evidence = dataset.current.filter(record => record.student_id === request.student_id && record.node_id === request.node_id && record.item_id === request.item_id)
   payload.requires_review = evidence.some(record => record.action === 'review')
   const requirement = dataset.input.requirements.find(row => row['指标编号'] === item['指标编号'])
-  payload.hint = methodHint(skillFamily(item, requirement), request.level)
+  payload.hint = methodHint(skillFamily(item, requirement), request.level, item['指标编号'])
   if (mode === 'teacher') {
     payload.teacher_solution = { reference_answer: item['参考答案'] ?? '', reference_analysis: item['参考解析'] ?? '', scoring_rubric: item['评分点'] ?? '' }
   } else {
