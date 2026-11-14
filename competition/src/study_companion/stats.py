@@ -69,13 +69,13 @@ def student_node_stats(
         in_stats = (row.scoring_status == SCORED
                     and vr.stats_flag in IN_STATS_FLAGS
                     and vr.effective_score is not None
-                    and row.full_score is not None)
+                    and vr.effective_full_score is not None)
 
         # 总体
         if row.scoring_status == SCORED and vr.stats_flag in IN_STATS_FLAGS:
             overall["已评分_计入统计"] += 1
             overall["得分"] += vr.effective_score or 0
-            overall["满分"] += row.full_score or 0
+            overall["满分"] += vr.effective_full_score or 0
         elif row.scoring_status == SCORED:
             overall["已评分_隔离"] += 1
         elif row.scoring_status == PENDING:
@@ -88,12 +88,12 @@ def student_node_stats(
             tb = by_theme.setdefault(theme, _empty_bucket())
             tb["已评分_计入统计"] += 1
             tb["得分"] += vr.effective_score or 0
-            tb["满分"] += row.full_score or 0
+            tb["满分"] += vr.effective_full_score or 0
             if indicator:
                 ib = by_indicator.setdefault(indicator, _empty_bucket())
                 ib["已评分_计入统计"] += 1
                 ib["得分"] += vr.effective_score or 0
-                ib["满分"] += row.full_score or 0
+                ib["满分"] += vr.effective_full_score or 0
 
     # 未教学主题显式标注（零分与尚未教学分别处理）
     for theme in dataset.themes():

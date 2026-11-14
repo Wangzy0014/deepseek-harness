@@ -157,6 +157,7 @@ def merge_versions(rows: List[AnswerRow]) -> Tuple[List[ValidRecord], List[Merge
             record=current,
             effective_theme=current.theme_recorded,
             effective_score=current.score,
+            effective_full_score=current.full_score,
             stats_flag=FLAG_NORMAL,
             issues=[],
             history=superseded,
@@ -197,16 +198,17 @@ def detect_issues(vr: ValidRecord, dataset: Dataset,
             issues.append(ISSUE_THEME_MISMATCH)
             vr.effective_theme = question.theme_id  # 修正
 
-    # 2) 满分与题库不一致 -> 以题库为准（记录级满分誊录错误）
+    # 2) 满分与题库不一致 -> 以题库为准修正到 effective_full_score
+    #    （不原地改解析层 AnswerRow——分层原则：检测层只产出有效值）
     if (question is not None and question.full_score is not None
             and row.full_score is not None and row.full_score != question.full_score):
         issues.append(ISSUE_FULL_MISMATCH_BANK)
-        row.full_score = question.full_score
-        vr.effective_score = row.score  # 分值不变，仅满分修正
+        vr.effective_full_score = question.full_score
 
-    # 3) 得分超出满分 / 总分与评分点合计不一致（仅已评分）
+    # 3) 得分超出满分 / 总分与评分点合计不一致（仅已评分，按有效满分判断）
+    effective_full = vr.effective_full_score
     if row.scoring_status == SCORED and row.score is not None:
-        if row.full_score is not None and row.score > row.full_score:
+        if effective_full is not None and row.score > effective_full:
             issues.append(ISSUE_SCORE_EXCEEDS_FULL)
         if row.point_scores:
             if sum(row.point_scores.values()) != row.score:

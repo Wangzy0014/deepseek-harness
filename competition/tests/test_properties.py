@@ -237,7 +237,7 @@ def test_invariants_on_random_data(tmp_path):
         for vr in clean.valid_records:
             r = vr.record
             if vr.stats_flag != FLAG_EXCLUDED and r.scoring_status == "已评分":
-                total[0] += r.score; total[1] += r.full_score; total[2] += 1
+                total[0] += r.score; total[1] += vr.effective_full_score; total[2] += 1
         summed = [0, 0, 0]
         for sid in dataset.students:
             for nid in dataset.nodes:

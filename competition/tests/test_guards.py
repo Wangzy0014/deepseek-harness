@@ -45,3 +45,26 @@ def test_policy_b_exercises_repair_path(tmp_path):
     assert hits > 0, (
         "随机数据未触发修正路径——性质测试对差异化处置空转，"
         "需要修 generate_dataset 的注入形态")
+
+
+def test_contract_structure_matches_products(tmp_path):
+    """契约结构守卫：管线产物的键集合必须与 shared/contracts 契约样例一致."""
+    import json as _json
+    from study_companion.pipeline import run_pipeline
+    from conftest import FIXTURES
+
+    out = tmp_path / "out"
+    run_pipeline(FIXTURES, out)
+    contracts = COMPETITION_DIR / "shared" / "contracts"
+
+    produced = _json.load(open(out / "valid_records.json"))
+    example = _json.load(open(contracts / "valid_record.example.json"))
+    example_keys = set(example["records"][0])
+    for rec in produced:
+        assert set(rec) == example_keys, (
+            f"valid_records 结构漂移: 多出 {set(rec) - example_keys}，"
+            f"缺少 {example_keys - set(rec)}——更新产物须同步契约样例")
+
+    stats = _json.load(open(out / "student_stats.json"))
+    stats_example = _json.load(open(contracts / "student_stats.example.json"))
+    assert set(stats[0]) == set(stats_example[0]), "student_stats 结构漂移"

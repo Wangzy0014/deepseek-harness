@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "study-companion"
+version = "0.1.0"
+description = "智慧学伴赛题：数据处理与个人统计（负责人：魏文宇）"
+requires-python = ">=3.9"
+dependencies = []          # 纯标准库，零依赖
+
+[tool.setuptools.packages.find]
+where = ["src"]

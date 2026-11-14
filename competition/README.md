@@ -63,7 +63,10 @@ PYTHONPATH=src python3 -m study_companion evidence --student E05 --node EN02
 python3 -m pytest tests/
 ```
 
-Python ≥ 3.9，仅标准库；`pytest` 仅测试需要。
+Python ≥ 3.9，仅标准库；`pytest` 仅测试需要。**通用路径是
+`PYTHONPATH=src`（全部文档与测试按此写）**；另附标准打包元数据，
+pip ≥ 22 的环境可选 `pip install -e competition/`（旧 pip 如 21
+不支持，已实测，用 PYTHONPATH 即可）。
 
 ### 队友怎么接（统一清洗入口）
 
@@ -98,7 +101,7 @@ for vr in clean.valid_records:                       # 当前有效记录
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 479 项：固定样例 78 + 随机性质测试 401
+python3 -m pytest tests/            # 481 项：固定样例 80 + 随机性质测试 401
 ```
 
 - `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、

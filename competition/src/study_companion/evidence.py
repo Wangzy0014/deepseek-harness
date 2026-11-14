@@ -27,6 +27,7 @@ def record_view(vr: ValidRecord, dataset: Dataset) -> Dict:
         "得分": row.score,
         "有效得分": vr.effective_score,
         "满分": row.full_score,
+        "有效满分": vr.effective_full_score,
         "统计口径": vr.stats_flag,
         "异常类型": vr.issues,
         "学生最终作答": row.final_answer,

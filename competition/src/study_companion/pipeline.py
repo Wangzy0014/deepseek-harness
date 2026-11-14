@@ -47,6 +47,7 @@ def valid_record_rows(clean_result) -> List[Dict]:
         row = dict(vr.record.raw)  # 保留原文
         row["有效主题"] = vr.effective_theme
         row["有效得分"] = "" if vr.effective_score is None else vr.effective_score
+        row["有效满分"] = "" if vr.effective_full_score is None else vr.effective_full_score
         row["统计口径"] = vr.stats_flag
         row["异常类型"] = "、".join(vr.issues)
         row["被归并版本"] = "、".join(

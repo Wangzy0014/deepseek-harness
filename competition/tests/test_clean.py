@@ -147,3 +147,38 @@ def test_differentiated_disposition_default_and_conservative(tmp_path, dataset):
                build_valid_records(ds, repair_consistent_points=False).valid_records}
     assert by_id_c["XR0100"].stats_flag == "excluded"
     assert by_id_c["XR0100"].effective_score is None
+
+
+def test_bank_full_score_mismatch_no_mutation(tmp_path):
+    """记录满分与题库不一致：以题库为准入 effective_full_score，不篡改原文.
+
+    同时验证：分层原则——解析层 AnswerRow 保持原值；统计分母用有效满分。
+    """
+    import shutil
+    from conftest import FIXTURES
+    from study_companion.load import load_all
+    from study_companion.clean import build_valid_records
+    from study_companion.stats import student_node_stats
+
+    for name in ["课程要求.csv", "题目与材料.csv", "模拟学生.csv",
+                 "测验节点.csv", "字段说明.csv"]:
+        shutil.copy(FIXTURES / name, tmp_path / name)
+    lines = open(FIXTURES / "作答记录.csv", encoding="utf-8-sig").read().splitlines()
+    # E05 @ EN02 QX08（题库满分3）：记录满分誊录为 2，得分 2
+    lines.append("XR0200,E05,QX08,T03,EN02,E05-EN02-QX08,1,"
+                 "2026-06-17T15:00:00+08:00,已评分,2,2,x<2,1. 步骤一,"
+                 "QX08P1=1；QX08P2=1；QX08P3=0")
+    open(tmp_path / "作答记录.csv", "w", encoding="utf-8-sig",
+         newline="").write("\n".join(lines) + "\n")
+
+    ds = load_all(tmp_path)
+    by_id = {vr.record.record_id: vr
+             for vr in build_valid_records(ds).valid_records}
+    vr = by_id["XR0200"]
+    assert "full_score_mismatch_bank" in vr.issues
+    assert vr.stats_flag == "corrected"
+    assert vr.record.full_score == 2          # 解析层原文不被篡改
+    assert vr.effective_full_score == 3       # 有效满分以题库为准
+    # 统计分母用有效满分：E05@EN02 仅 XR0200(2/3)
+    s = student_node_stats(ds, build_valid_records(ds), "E05", "EN02")
+    assert (s["总体"]["得分"], s["总体"]["满分"]) == (2, 3)

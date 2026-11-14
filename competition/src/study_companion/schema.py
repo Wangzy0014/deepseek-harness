@@ -111,7 +111,8 @@ class ValidRecord:
 
     record: AnswerRow
     effective_theme: str          # 以题库为准的主题（作答誊录主题与题库不一致时的修正结果）
-    effective_score: Optional[int]  # 隔离记录为 None
+    effective_score: Optional[int]      # 隔离记录为 None
+    effective_full_score: Optional[int]  # 以题库为准的满分（记录满分誊录错误时的修正结果）
     stats_flag: str               # FLAG_* 常量
     issues: List[str]             # 命中的异常类型（quality report 对应）
     superseded_by_revision: bool = False  # 恒 False（被归并的行不进入该结构）

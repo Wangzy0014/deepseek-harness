@@ -78,7 +78,7 @@ def answer_process_leads(dataset: Dataset, clean: CleanResult) -> List[Dict]:
             "材料编号": row.material_id,
             "节点编号": row.node_id,
             "得分": row.score,
-            "满分": row.full_score,
+            "满分": vr.effective_full_score,
             "过程末步": row.solution_steps[-1],
             "学生最终作答": row.final_answer,
             "参考答案": question.answer if question else "",
