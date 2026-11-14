@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { prepare_dataset } from '../../data/core.ts'
+import { get_student_stats, prepare_dataset } from '../../data/core.ts'
 import { load_dataset } from '../../data/io.ts'
 import type { DatasetInput, ResultEnvelope } from '../../data/types.ts'
 import { make_input, make_record } from '../../data/tests/helpers.ts'
@@ -8,6 +8,8 @@ import { build_workspace, execute_operation } from '../core.ts'
 import type { WorkspacePayload } from '../core.ts'
 import { prepare_workspace_dataset } from '../pipeline.ts'
 import { verify_workspace } from '../verify.ts'
+import { scope_key } from '../../shared/result.ts'
+import { diagnose_student, get_curriculum } from '../../diagnosis/core.ts'
 
 function ordinary_input(): DatasetInput {
   return make_input([
@@ -22,6 +24,66 @@ function assert_versions(result: ResultEnvelope<unknown>, reference: ResultEnvel
     assert.equal(result[key], reference[key], `Inconsistent ${key}`)
   }
 }
+
+test('scoped statistics and curriculum can be reused without changing diagnosis or crossing objects', () => {
+  const ds = prepare_workspace_dataset(ordinary_input(), { source_mode: 'fixture' })
+  const scope = { student_id: 'S1', node_id: 'M1' }
+  const statistics = get_student_stats(ds, scope)
+  const curriculum = get_curriculum(ds)
+  assert.deepEqual(diagnose_student(ds, scope, { statistics, curriculum }), diagnose_student(ds, scope))
+  for (const context of [
+    { statistics: get_student_stats(ds, { student_id: 'S2', node_id: 'M1' }), curriculum },
+    { statistics: { ...statistics, dataset_version: 'other' }, curriculum },
+    { statistics, curriculum: get_curriculum(ds, { topic_id: 'T1' }) },
+  ]) {
+    const rejected = diagnose_student(ds, scope, context)
+    assert.equal(rejected.result_status, 'error')
+    assert.equal(rejected.payload.stats.student_id, 'S1')
+    assert.equal(rejected.payload.stats.node_id, 'M1')
+    assert.equal(rejected.payload.stats.earned_score, 1)
+    assert.deepEqual(rejected.payload.curriculum, [])
+  }
+})
+
+test('opaque identifiers containing separators retain every distinct student and class case', () => {
+  const input = make_input()
+  input.students[0]!.学生编号 = 'A:B'
+  input.students[1]!.学生编号 = 'A'
+  input.students[0]!.模拟班级编号 = 'A:B'
+  input.students[1]!.模拟班级编号 = 'A:B'
+  input.students[2]!.模拟班级编号 = 'A'
+  input.nodes[0]!.节点编号 = 'C'
+  input.nodes[1]!.节点编号 = 'B:C'
+  input.records[0]!.学生编号 = 'A:B'
+  input.records[0]!.节点编号 = 'C'
+  const workspace = build_workspace(prepare_workspace_dataset(input, { source_mode: 'fixture' }))
+  assert.equal(Object.keys(workspace.payload.cases).length, 6)
+  assert.equal(Object.keys(workspace.payload.class_reports).length, 4)
+  assert.notEqual(scope_key('A:B', 'C'), scope_key('A', 'B:C'))
+  assert.equal(workspace.payload.cases[scope_key('A:B', 'C')]?.statistics.payload.earned_score, 1)
+  assert.equal(workspace.payload.cases[scope_key('A', 'B:C')]?.statistics.payload.score_rate, null)
+  assert.equal(verify_workspace(workspace).status, 'passed')
+})
+
+test('report verification rejects missing cases and valid references from the wrong learning indicator', () => {
+  const base = build_workspace(prepare_workspace_dataset(ordinary_input(), { source_mode: 'fixture' }))
+  const mutations: Array<(copy: ResultEnvelope<WorkspacePayload>) => void> = [
+    copy => { delete copy.payload.cases['S1:M1'] },
+    copy => { delete copy.payload.class_reports['C1:M1'] },
+    copy => { copy.payload.cases['S1:M1']!.plan.payload.activities[0]!.item_ids = ['A3'] },
+    copy => { const hint = Object.values(copy.payload.cases['S1:M1']!.hints)[0]![0]!; hint.payload.item_id = 'A3' },
+    copy => { copy.payload.class_reports['invented'] = copy.payload.class_reports['C1:M1']!; delete copy.payload.class_reports['C1:M1'] },
+    copy => { copy.payload.cases['S1:M1']!.plan.payload.delivery.first_activity_ids = [] },
+    copy => { copy.payload.cases['S1:M1']!.plan.payload.activities[0]!.phase = 'follow_up' },
+    copy => { copy.payload.cases['S1:M1']!.plan.payload.activities[0]!.finding_ids = ['invented-finding'] },
+    copy => { copy.payload.cases['S1:M1']!.plan.payload.activities.push(copy.payload.cases['S1:M1']!.plan.payload.activities[0]!) },
+  ]
+  for (const mutate of mutations) {
+    const copy = structuredClone(base)
+    mutate(copy)
+    assert.equal(verify_workspace(copy).status, 'failed')
+  }
+})
 
 test('the unified dispatcher rejects unknown fields, identifiers, and invalid request values', () => {
   const ds = prepare_workspace_dataset(ordinary_input(), { source_mode: 'fixture' })

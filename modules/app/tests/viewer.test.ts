@@ -11,8 +11,8 @@ import { prepare_workspace_dataset } from '../pipeline.ts'
 type DownloadBlob = InstanceType<Window['Blob']>
 interface Download { filename: string; blob: DownloadBlob }
 
-async function setup(t: TestContext, input: DatasetInput = make_demo_input()) {
-  const workspace = build_workspace(prepare_workspace_dataset(input, { source_mode: 'fixture', producer_version: 'viewer-test' }))
+async function setup(t: TestContext, input: DatasetInput = make_demo_input(), sourceMode: 'fixture' | 'live' = 'fixture') {
+  const workspace = build_workspace(prepare_workspace_dataset(input, { source_mode: sourceMode, producer_version: 'viewer-test' }))
   const window = new Window({
     settings: {
       enableJavaScriptEvaluation: true, suppressInsecureJavaScriptEnvironmentWarning: true,
@@ -214,4 +214,165 @@ test('imported markup stays literal text and does not create active DOM elements
   assert.equal(window.document.querySelector('img'), null)
   assert.equal(window.eval('globalThis.__unexpectedMarkup'), undefined)
   assert.equal(networkRequests(), 0)
+})
+
+test('student search supports keyboard lookup without changing ambiguous or missing selections', async t => {
+  const { window } = await setup(t)
+  click(window, '学生诊断')
+  const search = window.document.querySelector('input[aria-label="快速查找学生"]')
+  assert.ok(search instanceof window.HTMLInputElement)
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }))
+  assert.equal(window.document.activeElement, search)
+  search.value = 'demo-c'
+  search.dispatchEvent(new window.Event('input', { bubbles: true }))
+  assert.ok(window.document.querySelector('.search-status')?.textContent.includes('DEMO-C'))
+  search.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  assert.ok(window.document.querySelector('.node-description')?.textContent.includes('DEMO-C · CHECK-2'))
+  assert.ok(mainText(window).includes('暂无可计分证据'))
+  search.value = 'group-a'
+  search.dispatchEvent(new window.Event('input', { bubbles: true }))
+  search.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  assert.ok(window.document.querySelector('.search-status')?.textContent.includes('找到 2 名'))
+  assert.ok(window.document.querySelector('.node-description')?.textContent.includes('DEMO-C · CHECK-2'))
+  search.value = 'missing'
+  search.dispatchEvent(new window.Event('input', { bubbles: true }))
+  assert.ok(window.document.querySelector('.search-status')?.textContent.includes('没有匹配'))
+  choose(window, '模拟学生', 'DEMO-B')
+  assert.equal(search.value, '')
+  assert.equal(window.document.querySelector('.search-status')?.textContent, '')
+  const notes = window.document.querySelector('textarea')
+  assert.ok(notes)
+  notes.focus()
+  const slash = new window.KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+  notes.dispatchEvent(slash)
+  assert.equal(slash.defaultPrevented, false)
+  assert.equal(window.document.activeElement, notes)
+})
+
+test('hint progress survives navigation while remaining isolated by student and node', async t => {
+  const { window } = await setup(t)
+  click(window, '学习计划')
+  const question = () => [...window.document.querySelectorAll('.question')].find(element => element.querySelector('strong')?.textContent === 'EX-C')
+  let current = question()
+  assert.ok(current)
+  current.querySelectorAll('button')[0]!.click()
+  current.querySelectorAll('button')[1]!.click()
+  const shown = current.querySelector('.hint-text')?.textContent
+  click(window, '总览')
+  click(window, '学习计划')
+  current = question()
+  assert.ok(current)
+  assert.equal(current.querySelector('.hint-text')?.textContent, shown)
+  assert.deepEqual([...current.querySelectorAll('button')].map(button => button.disabled), [false, false, false])
+  assert.equal(current.querySelector('button.active')?.textContent, '提示 2')
+  choose(window, '模拟学生', 'DEMO-B')
+  current = question()
+  assert.ok(current)
+  assert.deepEqual([...current.querySelectorAll('button')].map(button => button.disabled), [false, true, true])
+  choose(window, '模拟学生', 'DEMO-A')
+  choose(window, '测验节点', 'CHECK-1')
+  assert.equal(question(), undefined)
+  choose(window, '测验节点', 'CHECK-2')
+  assert.equal(question()?.querySelector('.hint-text')?.textContent, shown)
+})
+
+test('quality search and scope filters export only the visible queue without changing records', async t => {
+  const input = make_demo_input()
+  const a = input.records.find(row => row.学生编号 === 'DEMO-A' && row.材料编号 === 'EX-C')!
+  const b = input.records.find(row => row.学生编号 === 'DEMO-B' && row.节点编号 === 'CHECK-1' && row.材料编号 === 'EX-B')!
+  input.records.push({ ...a, 记录编号: 'REVIEW-A', 作答事件编号: 'REVIEW-EVENT-A', 得分: '9' }, { ...b, 记录编号: 'REVIEW-B', 作答事件编号: 'REVIEW-EVENT-B', 得分: '8' })
+  const { window, workspace, downloads } = await setup(t, input)
+  const original = JSON.stringify(workspace)
+  click(window, '质量复核')
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 2)
+  choose(window, '复核范围', 'current')
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 1)
+  assert.ok(window.document.querySelector('.quality-results')?.textContent.includes('REVIEW-A'))
+  click(window, '导出当前 JSON')
+  const filtered = JSON.parse(await downloads[0]!.blob.text())
+  assert.equal(filtered.scope.student_id, 'DEMO-A')
+  assert.equal(filtered.payload.filtered_count, 1)
+  assert.deepEqual(filtered.evidence_ids, ['REVIEW-A'])
+  assert.deepEqual(filtered.payload.quality_records.map((record: { record_id: string }) => record.record_id), ['REVIEW-A'])
+  choose(window, '模拟学生', 'DEMO-B')
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 0)
+  choose(window, '测验节点', 'CHECK-1')
+  assert.ok(window.document.querySelector('.quality-results')?.textContent.includes('REVIEW-B'))
+  const search = window.document.querySelector('input[aria-label="搜索复核记录"]')
+  assert.ok(search instanceof window.HTMLInputElement)
+  search.value = 'score_out_of_range'
+  search.dispatchEvent(new window.Event('input', { bubbles: true }))
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 1)
+  assert.equal(window.document.activeElement === search, false)
+  search.focus()
+  search.value = 'does-not-exist'
+  search.dispatchEvent(new window.Event('input', { bubbles: true }))
+  assert.equal(window.document.activeElement, search)
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 0)
+  assert.ok(mainText(window).includes('没有匹配记录'))
+  click(window, '清除筛选')
+  assert.equal(window.document.querySelectorAll('.quality-record').length, 2)
+  assert.equal(JSON.stringify(workspace), original)
+})
+
+test('first-batch activities remain visible while later work is folded and exported with its phase', async t => {
+  const input = make_demo_input()
+  input.items.push({ ...input.items[0]!, 材料编号: 'EX-D', 指标编号: 'ALG-2', 评分点: 'EX-DP1 正确完成题目 1分' })
+  input.requirements.push({ ...input.requirements[0]!, 指标编号: 'ALG-2', 观察指标: '补充观察另一个式子' })
+  input.nodes.find(row => row.节点编号 === 'CHECK-2')!.可用题目编号 += '、EX-D'
+  const { window, workspace, downloads } = await setup(t, input)
+  const plan = workspace.payload.cases['DEMO-A:CHECK-2']!.plan.payload
+  assert.ok(plan.activities.length > 3)
+  click(window, '学习计划')
+  const followup = window.document.querySelector('details.plan-followup')
+  assert.ok(followup instanceof window.HTMLDetailsElement)
+  assert.equal(followup.open, false)
+  assert.equal(window.document.querySelectorAll('main > .activity').length, plan.delivery.first_activity_ids.length)
+  assert.equal(followup.querySelectorAll('.activity').length, plan.delivery.follow_up_activity_ids.length)
+  click(window, '导出学生练习清单')
+  const output = JSON.parse(await downloads[0]!.blob.text())
+  assert.deepEqual(output.payload.delivery, plan.delivery)
+  assert.deepEqual(output.payload.activities.map((activity: { phase: string }) => activity.phase), plan.activities.map(activity => activity.phase))
+})
+
+test('reports clearly separate synthetic demonstrations from official simulated inputs', async t => {
+  const fixture = await setup(t)
+  assert.equal(fixture.window.document.querySelector('.source-fixture strong')?.textContent, '合成演示数据')
+  assert.ok(fixture.window.document.querySelector('.data-source-banner')?.textContent.includes('不能代替正式数据验收'))
+  const live = await setup(t, make_demo_input(), 'live')
+  assert.equal(live.window.document.querySelector('.source-live strong')?.textContent, '赛事模拟数据')
+  assert.equal(live.window.document.querySelector('.source-fixture'), null)
+})
+
+test('colon-containing student and node identifiers keep cases and teacher notes distinct', async t => {
+  const input = make_demo_input()
+  const studentNames: Record<string, string> = { 'DEMO-A': 'A:B', 'DEMO-B': 'A' }
+  const nodeNames: Record<string, string> = { 'CHECK-1': 'C', 'CHECK-2': 'B:C' }
+  for (const student of input.students) student.学生编号 = studentNames[student.学生编号!] ?? student.学生编号!
+  for (const node of input.nodes) node.节点编号 = nodeNames[node.节点编号!]!
+  for (const record of input.records) {
+    record.学生编号 = studentNames[record.学生编号!] ?? record.学生编号!
+    record.节点编号 = nodeNames[record.节点编号!]!
+  }
+  const { window, downloads } = await setup(t, input)
+  click(window, '学生诊断')
+  choose(window, '模拟学生', 'A:B')
+  choose(window, '测验节点', 'C')
+  let notes = window.document.querySelector('textarea')!
+  notes.value = '第一个对象的备注'
+  notes.dispatchEvent(new window.Event('input', { bubbles: true }))
+  choose(window, '模拟学生', 'A')
+  choose(window, '测验节点', 'B:C')
+  assert.ok(window.document.querySelector('.node-description')?.textContent.includes('A · B:C'))
+  notes = window.document.querySelector('textarea')!
+  assert.equal(notes.value, '')
+  notes.value = '第二个对象的备注'
+  notes.dispatchEvent(new window.Event('input', { bubbles: true }))
+  click(window, '导出备注')
+  const output = JSON.parse(await downloads[0]!.blob.text())
+  assert.equal(output.notes['diagnosis:A%3AB:C'], '第一个对象的备注')
+  assert.equal(output.notes['diagnosis:A:B%3AC'], '第二个对象的备注')
+  choose(window, '模拟学生', 'A:B')
+  choose(window, '测验节点', 'C')
+  assert.equal(window.document.querySelector('textarea')?.value, '第一个对象的备注')
 })
