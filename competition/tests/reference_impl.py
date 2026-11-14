@@ -70,7 +70,7 @@ def analyze(data_dir: Path, repair_consistent_points: bool = False):
             issues.append("semantic_review")
         blocking = any(i in issues for i in (
             "score_exceeds_full", "total_points_mismatch", "node_out_of_scope"))
-        # 策略B：得分超满分但评分点合计==满分 -> 以评分点合计为有效得分
+        # 差异化处置：得分超满分但评分点合计==满分 -> 以评分点合计为有效得分
         effective = sc
         if ("score_exceeds_full" in issues and repair_consistent_points
                 and r["评分点得分"] and full is not None):

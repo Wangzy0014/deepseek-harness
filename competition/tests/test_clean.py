@@ -107,11 +107,12 @@ def test_normalize_answer():
     assert normalize_answer("5ab²") != normalize_answer("-5ab²")
 
 
-def test_policy_b_repairs_consistent_points(tmp_path, dataset):
-    """策略B：得分超满分且评分点合计==满分 -> 按评分点合计修正（corrected）.
+def test_differentiated_disposition_default_and_conservative(tmp_path, dataset):
+    """差异化处置（默认）：纠正自洽、忽略不自洽；保守模式全隔离.
 
-    构造一条 4/3、评分点 1+1+1 的记录（E03@EN02）：默认隔离，开策略后修正为 3。
-    同时验证评分点合计!=满分的记录在策略B下仍隔离（无法仲裁）。
+    构造一条 4/3、评分点 1+1+1 的记录（E03@EN02）：默认修正为 3；
+    repair_consistent_points=False 隔离。
+    同时验证评分点合计!=满分的记录在两种模式下都隔离（无法仲裁）。
     """
     import shutil
     from conftest import FIXTURES
@@ -123,7 +124,6 @@ def test_policy_b_repairs_consistent_points(tmp_path, dataset):
                  "测验节点.csv", "字段说明.csv"]:
         shutil.copy(FIXTURES / name, tmp_path / name)
     lines = open(FIXTURES / "作答记录.csv", encoding="utf-8-sig").read().splitlines()
-    # E02 @ EN02 QX08：4/3 且评分点合计 3（==满分，策略B可修正）
     lines.append("XR0100,E03,QX08,T03,EN02,E03-EN02-QX08,1,"
                  "2026-06-17T15:00:00+08:00,已评分,4,3,x<2,1. 步骤一,"
                  "QX08P1=1；QX08P2=1；QX08P3=1")
@@ -131,17 +131,19 @@ def test_policy_b_repairs_consistent_points(tmp_path, dataset):
          newline="").write("\n".join(lines) + "\n")
 
     ds = load_all(tmp_path)
-    by_id_a = {vr.record.record_id: vr
-               for vr in build_valid_records(ds).valid_records}
-    assert by_id_a["XR0100"].stats_flag == "excluded"      # 策略A：隔离
-    assert by_id_a["XR0100"].effective_score is None
-
-    by_id_b = {vr.record.record_id: vr
-               for vr in build_valid_records(ds, repair_consistent_points=True).valid_records}
-    repaired = by_id_b["XR0100"]
-    assert repaired.stats_flag == FLAG_CORRECTED            # 策略B：修正
+    # 默认 = 差异化处置：XR0100 评分点自洽 -> 纠正
+    by_id = {vr.record.record_id: vr
+             for vr in build_valid_records(ds).valid_records}
+    repaired = by_id["XR0100"]
+    assert repaired.stats_flag == FLAG_CORRECTED
     assert repaired.effective_score == 3
     assert ISSUE_SCORE_REPAIRED_FROM_POINTS in repaired.issues
-    # XR0009（总分3、评分点合计2、满分3：合计!=满分）策略B下仍隔离
-    assert by_id_b["XR0009"].stats_flag == "excluded"
-    assert by_id_b["XR0009"].effective_score is None
+    # XR0009（评分点 2 != 满分 3，无自洽证据）默认下仍隔离
+    assert by_id["XR0009"].stats_flag == "excluded"
+    assert by_id["XR0009"].effective_score is None
+
+    # 保守模式：全部隔离
+    by_id_c = {vr.record.record_id: vr for vr in
+               build_valid_records(ds, repair_consistent_points=False).valid_records}
+    assert by_id_c["XR0100"].stats_flag == "excluded"
+    assert by_id_c["XR0100"].effective_score is None

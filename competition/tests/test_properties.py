@@ -127,7 +127,7 @@ def generate_dataset(seed: int, out_dir: Path) -> Path:
                     wrong = next(t for t in ("PT01", "PT02", "PT03") if t != theme)
                     add_record(sid, node, mid, 记录主题=wrong)
                 elif r < 0.38:                   # 注入：得分超满分（两种形态）
-                    # 形态1：评分点合计==满分（策略B可修正）
+                    # 形态1：评分点合计==满分（差异化处置可纠正）
                     # 形态2：评分点跟随总分或缺失（两策略下都隔离）
                     if qmap[mid][1] == "解答题" and rng.random() < 0.5:
                         pts_full = "；".join(f"{mid}P{k}=1" for k in (1, 2, 3))

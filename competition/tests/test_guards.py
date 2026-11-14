@@ -2,7 +2,7 @@
 
 1. README 测试计数防漂移：README 里的数字必须与 pytest 实际收集数一致
    （历史上连错四轮的根治——改测试不改文档会直接挂这里）。
-2. 性质测试非空转：策略 B 的修正路径必须在随机数据里被真实触发
+2. 性质测试非空转：差异化处置的修正路径必须在随机数据里被真实触发
    （"对拍通过"不等于"对拍覆盖了改动路径"）。
 """
 
@@ -38,10 +38,10 @@ def test_policy_b_exercises_repair_path(tmp_path):
     hits = 0
     for seed in range(30):
         data_dir = generate_dataset(seed, tmp_path / f"pb{seed}")
-        cl = build_valid_records(load_all(data_dir),
-                                 repair_consistent_points=True)
+        # 默认即差异化处置：修正路径必须被真实触发
+        cl = build_valid_records(load_all(data_dir))
         hits += sum(1 for vr in cl.valid_records
                     if ISSUE_SCORE_REPAIRED_FROM_POINTS in vr.issues)
     assert hits > 0, (
-        "随机数据未触发策略B修正路径——性质测试对策略B空转，"
+        "随机数据未触发修正路径——性质测试对差异化处置空转，"
         "需要修 generate_dataset 的注入形态")

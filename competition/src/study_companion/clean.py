@@ -169,12 +169,16 @@ def normalize_answer(text: str) -> str:
 
 
 def detect_issues(vr: ValidRecord, dataset: Dataset,
-                  repair_consistent_points: bool = False) -> ValidRecord:
+                  repair_consistent_points: bool = True) -> ValidRecord:
     """对单条当前记录识别异常并给出统计口径处置.
 
-    repair_consistent_points=True 时启用"评分点自洽修正"策略（全队拍板的
-    备选方案 B）：得分超出满分、但评分点合计恰好等于满分时，以评分点
-    合计为有效得分（corrected），不再隔离。默认关闭（方案 A，保守隔离）。
+    差异化处置（默认开启，2026-11-14 依据老师说明确定：异常数据由系统
+    检测并处理——能纠正的纠正、不能仲裁的忽略）：
+    - 得分超出满分、且评分点合计==满分（证据自洽）-> 以评分点合计为
+      有效得分（corrected，纠正）；
+    - 得分与评分点相互矛盾且无自洽证据（如评分点合计!=满分）-> 隔离
+      （excluded，忽略），保留证据待人工复核；
+    - repair_consistent_points=False 可退回保守模式（全部隔离）。
     """
     row = vr.record
     question = dataset.question(row.material_id)
@@ -238,10 +242,11 @@ def detect_issues(vr: ValidRecord, dataset: Dataset,
 
 
 def build_valid_records(dataset: Dataset,
-                        repair_consistent_points: bool = False) -> CleanResult:
+                        repair_consistent_points: bool = True) -> CleanResult:
     """统一清洗入口：全队唯一入口，返回当前有效记录 + 归并日志.
 
-    repair_consistent_points：见 detect_issues docstring（默认方案 A 保守隔离）。
+    repair_consistent_points：见 detect_issues docstring。
+    默认 True = 差异化处置（纠正自洽 / 忽略不自洽）。
     """
     valid, log = merge_versions(dataset.rows)
     valid = [detect_issues(vr, dataset, repair_consistent_points)

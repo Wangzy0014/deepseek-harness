@@ -65,14 +65,13 @@ def test_pipeline_command(dataset, capsys, tmp_path):
     assert (tmp_path / "out" / "samples" / "answer_process_conflicts.json").exists()
 
 
-def test_repair_points_flag_after_subcommand(dataset, capsys):
-    """--repair-points 放在子命令之后也应可用（父解析器）。"""
-    rc, out = _run(["stats", "--student", "E01", "--node", "EN01",
-                    "--repair-points"], capsys)
-    assert rc == 0
+def test_isolate_all_flag_after_subcommand(dataset, capsys):
+    """--isolate-all 放在子命令之后也应可用（父解析器）。"""
+    rc, out = _run(["check", "--isolate-all"], capsys)
+    assert rc == 0 and "原始行数 15" in out
 
 
-def test_repair_points_flag_before_subcommand(dataset, capsys):
-    rc = cli.main(["--data-dir", str(FIXTURES), "--repair-points", "check"])
+def test_isolate_all_flag_before_subcommand(dataset, capsys):
+    rc = cli.main(["--data-dir", str(FIXTURES), "--isolate-all", "check"])
     out = capsys.readouterr().out
     assert rc == 0 and "原始行数 15" in out

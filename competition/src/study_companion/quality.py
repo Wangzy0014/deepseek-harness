@@ -25,7 +25,7 @@ ISSUE_LABELS = {
     "node_out_of_scope": "材料超出节点可用范围",
     "semantic_review": "答案与参考答案一致但记0分（语义复核）",
     "full_score_mismatch_bank": "记录满分与题库不一致",
-    "score_repaired_from_points": "得分按评分点合计修正（策略B）",
+    "score_repaired_from_points": "得分按评分点合计修正（纠正）",
 }
 
 
@@ -70,7 +70,7 @@ class QualityReport:
 
 
 def build_quality_report(dataset: Dataset, clean: CleanResult,
-                         policy: str = "conservative") -> QualityReport:
+                         policy: str = "repair_consistent_points") -> QualityReport:
     status_counts = {SCORED: 0, PENDING: 0, UNANSWERED: 0}
     flag_counts = {FLAG_NORMAL: 0, FLAG_CORRECTED: 0,
                    FLAG_REVIEW_KEPT: 0, FLAG_EXCLUDED: 0}

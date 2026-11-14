@@ -29,7 +29,7 @@ def _ctx(args):
     dataset = load_all(data_dir)
     clean_result = clean_mod.build_valid_records(
         dataset,
-        repair_consistent_points=getattr(args, "repair_points", False))
+        repair_consistent_points=not getattr(args, "isolate_all", False))
     return dataset, clean_result
 
 
@@ -37,7 +37,7 @@ def cmd_pipeline(args) -> int:
     output_dir = resolve_output_dir(args.output_dir)
     paths = run_pipeline(
         resolve_data_dir(getattr(args, "data_dir", None)), output_dir,
-        repair_consistent_points=getattr(args, "repair_points", False))
+        repair_consistent_points=not getattr(args, "isolate_all", False))
     print(f"完成，产物写入 {output_dir}:")
     for name, p in paths.items():
         if isinstance(p, list):
@@ -149,10 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--data-dir", default=argparse.SUPPRESS,
                         help="赛题数据目录（默认 competition/data/raw）")
-    common.add_argument("--repair-points", action="store_true",
+    common.add_argument("--isolate-all", action="store_true",
                         default=argparse.SUPPRESS,
-                        help="处置策略B：得分超满分但评分点合计==满分时按评分点合计修正"
-                             "（默认策略A：隔离。切换前需全队拍板）")
+                        help="保守模式：得分类冲突全部隔离（默认为差异化处置："
+                             "评分点自洽则纠正，否则忽略。差异化处置为老师说明"
+                             "要求的系统能力：检测并处理异常数据（忽略/纠正））")
 
     parser = argparse.ArgumentParser(
         prog="study_companion", parents=[common],

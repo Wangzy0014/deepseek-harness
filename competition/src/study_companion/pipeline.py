@@ -93,7 +93,7 @@ def stats_flat_rows(stats_list: List[Dict]) -> List[Dict]:
 
 
 def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
-                 repair_consistent_points: bool = False) -> Dict:
+                 repair_consistent_points: bool = True) -> Dict:
     """全流程运行并写出全部交付文件，返回产物路径表.
 
     repair_consistent_points：处置策略开关（方案 B），默认关闭（方案 A）。
