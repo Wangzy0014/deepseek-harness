@@ -5,6 +5,9 @@ export interface LearningActivity {
   activity_id: string
   order: number
   kind: 'targeted_practice' | 'extension' | 'observation'
+  phase: 'first' | 'follow_up'
+  selection_reason: 'diagnosed_error' | 'partial_score' | 'unattempted_item' | 'explanation_check'
+  finding_ids: string[]
   goal: string
   indicator_id: string
   topic_id: string
@@ -45,6 +48,12 @@ export interface LearningPlanPayload {
   evidence_gaps: EvidenceGap[]
   statistics: StudentStats
   activities: LearningActivity[]
+  delivery: {
+    first_activity_ids: string[]
+    follow_up_activity_ids: string[]
+    first_batch_limit: number
+    advance_when: string
+  }
   review_record_ids: string[]
 }
 

@@ -3,7 +3,7 @@ import type { EvidenceRecord, PreparedDataset, ResultEnvelope } from '../data/ty
 import { analyze_class, compare_classes, compare_students, compare_with_peers } from '../comparison/core.ts'
 import { diagnose_student, get_curriculum } from '../diagnosis/core.ts'
 import { build_learning_plan, get_hint } from '../guidance/core.ts'
-import { make_result } from '../shared/result.ts'
+import { make_result, scope_key } from '../shared/result.ts'
 
 /** One complete, version-consistent individual view. */
 export interface StudentCase {
@@ -38,6 +38,7 @@ export function build_workspace(dataset: PreparedDataset): ResultEnvelope<Worksp
   const students = dataset.input.students.map(row => ({ student_id: row['学生编号']!, class_id: row['模拟班级编号']! }))
   const nodes = dataset.input.nodes.map(row => ({ node_id: row['节点编号']!, date: row['模拟测验日期'] ?? '', description: row['说明'] ?? '' }))
   const classes = [...new Set(students.map(student => student.class_id))].sort()
+  const curriculum = get_curriculum(dataset)
   const cases: Record<string, StudentCase> = Object.create(null) as Record<string, StudentCase>
   const classReports: WorkspacePayload['class_reports'] = Object.create(null) as WorkspacePayload['class_reports']
   const operationFailures: string[] = []
@@ -45,8 +46,8 @@ export function build_workspace(dataset: PreparedDataset): ResultEnvelope<Worksp
     for (const student of students) {
       const scope = { student_id: student.student_id, node_id: node.node_id }
       const statistics = get_student_stats(dataset, scope)
-      const diagnosis = diagnose_student(dataset, scope)
-      const plan = build_learning_plan(dataset, scope, diagnosis)
+      const diagnosis = diagnose_student(dataset, scope, { statistics, curriculum })
+      const plan = build_learning_plan(dataset, scope, diagnosis, statistics)
       const peers = compare_with_peers(dataset, scope)
       const hints: StudentCase['hints'] = Object.create(null) as StudentCase['hints']
       const selected = [...new Set(plan.payload.activities.flatMap(activity => activity.item_ids))]
@@ -55,9 +56,9 @@ export function build_workspace(dataset: PreparedDataset): ResultEnvelope<Worksp
       }
       const results: ResultEnvelope<unknown>[] = [statistics, diagnosis, plan, peers, ...Object.values(hints).flat()]
       if (results.some(result => result.result_status === 'error')) operationFailures.push(`${student.student_id}/${node.node_id}`)
-      cases[`${student.student_id}:${node.node_id}`] = { statistics, diagnosis, plan, peers, hints }
+      cases[scope_key(student.student_id, node.node_id)] = { statistics, diagnosis, plan, peers, hints }
     }
-    for (const classId of classes) classReports[`${classId}:${node.node_id}`] = analyze_class(dataset, { class_id: classId, node_id: node.node_id })
+    for (const classId of classes) classReports[scope_key(classId, node.node_id)] = analyze_class(dataset, { class_id: classId, node_id: node.node_id })
   }
   const sanitizedItems = dataset.input.items.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => !['参考答案', '参考解析', '评分点'].includes(key))))
   const browserSnapshot: PreparedDataset = {
@@ -67,7 +68,7 @@ export function build_workspace(dataset: PreparedDataset): ResultEnvelope<Worksp
   }
   const payload: WorkspacePayload = {
     title: '智慧学伴', engine: 'local_rules', students, nodes, classes,
-    summary: dataset.summary, curriculum: get_curriculum(dataset), cases, class_reports: classReports,
+    summary: dataset.summary, curriculum, cases, class_reports: classReports,
     // 质量记录 = 有 quality_issues 的全部当前记录（处置后仍可追溯，与验收书 6 条一致）
     quality_records: dataset.current.filter(record => record.quality_issues.length > 0), browser_snapshot: browserSnapshot,
   }

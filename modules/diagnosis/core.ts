@@ -1,8 +1,20 @@
 import { get_student_stats } from '../data/core.ts'
-import type { CsvRow, EvidenceRecord, PreparedDataset, ResultEnvelope, StudentScope } from '../data/types.ts'
+import type { CsvRow, EvidenceRecord, PreparedDataset, ResultEnvelope, StudentScope, StudentStats } from '../data/types.ts'
 import type { CurriculumEntry, CurriculumPayload, DiagnosisPayload, Finding } from './types.ts'
 
 export type { CurriculumEntry, CurriculumMaterial, CurriculumPayload, CurriculumTopic, DiagnosisPayload, Finding } from './types.ts'
+
+/** Same-snapshot results that one analysis run can reuse without global caches. */
+export interface DiagnosisContext {
+  statistics?: ResultEnvelope<StudentStats>
+  curriculum?: ResultEnvelope<CurriculumPayload>
+}
+
+function matchingVersion(dataset: PreparedDataset, prior: ResultEnvelope<unknown>): boolean {
+  return prior.schema_version === dataset.schema_version && prior.dataset_version === dataset.dataset_version
+    && prior.policy_version === dataset.policy_version && prior.producer_version === dataset.producer_version
+    && prior.source_mode === dataset.source_mode
+}
 
 function result<T>(dataset: PreparedDataset, scope: Record<string, string>, payload: T, status: ResultEnvelope<T>['result_status'], evidence: string[] = [], limitations: string[] = []): ResultEnvelope<T> {
   return { schema_version: dataset.schema_version, dataset_version: dataset.dataset_version, policy_version: dataset.policy_version, producer_version: dataset.producer_version, source_mode: dataset.source_mode, scope, result_status: status, payload, evidence_ids: [...new Set(evidence)].sort(), limitations }
@@ -106,12 +118,20 @@ function baseFinding(entry: CurriculumEntry | undefined, type: string, suffix: s
  * Diagnose observed work without turning missing records or disputed scores into a weakness.
  * @param dataset - Prepared snapshot whose statistical eligibility is already determined.
  * @param scope - Student and one explicit measurement node.
+ * @param context - Optional full curriculum and scoped statistics already computed in this analysis run.
  * @returns Facts, bounded interpretations, missing observations, and independent scoring-review items.
  */
-export function diagnose_student(dataset: PreparedDataset, scope: StudentScope): ResultEnvelope<DiagnosisPayload> {
-  const stats = get_student_stats(dataset, scope)
-  const curriculum = get_curriculum(dataset).payload.entries
+export function diagnose_student(dataset: PreparedDataset, scope: StudentScope, context: DiagnosisContext = {}): ResultEnvelope<DiagnosisPayload> {
+  const stats = context.statistics ?? get_student_stats(dataset, scope)
+  const indexed = context.curriculum ?? get_curriculum(dataset)
+  const curriculum = indexed.payload.entries
   const payload: DiagnosisPayload = { student_id: scope.student_id, node_id: scope.node_id, stats: stats.payload, findings: [], covered_indicator_ids: [], unobserved_indicator_ids: [], curriculum }
+  if (!matchingVersion(dataset, stats) || !matchingVersion(dataset, indexed)
+    || stats.scope['student_id'] !== scope.student_id || stats.scope['node_id'] !== scope.node_id
+    || stats.payload.student_id !== scope.student_id || stats.payload.node_id !== scope.node_id
+    || indexed.scope['topic_id'] !== undefined || indexed.result_status === 'error') {
+    return result(dataset, { ...scope }, { ...payload, stats: get_student_stats(dataset, scope).payload, curriculum: [], findings: [] }, 'error', [], ['复用结果的版本、对象范围或课程范围不同，未拼接诊断。'])
+  }
   if (stats.result_status === 'error') return result(dataset, { ...scope }, payload, 'error', [], stats.limitations)
   const records = dataset.current.filter(record => record.student_id === scope.student_id && record.node_id === scope.node_id)
   const items = new Map(dataset.input.items.map(item => [item['材料编号'], item]))
