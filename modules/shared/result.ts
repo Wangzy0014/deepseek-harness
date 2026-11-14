@@ -1,6 +1,16 @@
 import type { PreparedDataset, ResultEnvelope } from '../data/types.ts'
 
 /**
+ * Encode two opaque identifiers without ambiguous separator collisions.
+ * @param entity - Student or class identifier, preserved without trimming.
+ * @param node - Explicit measurement node identifier.
+ * @returns A stable report key; ordinary alphanumeric identifiers retain their existing form.
+ */
+export function scope_key(entity: string, node: string): string {
+  return `${encodeURIComponent(entity)}:${encodeURIComponent(node)}`
+}
+
+/**
  * Carry one prepared snapshot's versions and evidence into a business result.
  * @param dataset - Snapshot used by the operation.
  * @param scope - Explicit input identifiers and selected mode.
