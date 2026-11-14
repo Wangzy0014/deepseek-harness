@@ -1,0 +1,34 @@
+name: Study companion
+
+on:
+  push:
+    branches: [keill]
+    paths:
+      - 'modules/**'
+      - '.agents/skills/study-companion/**'
+      - '.github/workflows/study-companion.yml'
+      - 'package.json'
+  pull_request:
+    paths:
+      - 'modules/**'
+      - '.agents/skills/study-companion/**'
+      - '.github/workflows/study-companion.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  business-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '24'
+      - name: Install the local business toolchain
+        run: npm ci --prefix modules/data --ignore-scripts --workspaces=false
+      - name: Build and test synthetic cases
+        run: npm run study:test
+      - name: Export a self-contained synthetic demo
+        run: npm run study:demo -- --out tmp/study-data/demo-ci
