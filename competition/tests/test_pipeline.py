@@ -18,8 +18,9 @@ def paths(tmp_path_factory):
 def test_pipeline_products(paths):
     for key in ["字段映射", "质量报告", "个人统计", "覆盖表"]:
         assert key in paths
-    # 真实样例目标（D01/Q043/Q025/D17）在合成数据下逐项自动跳过
-    for key in ["Q025同伴记录", "D17无记录样例", "D01/Q043当前记录"]:
+    # 真实样例目标（D01/Q043/Q025/D14/D17）在合成数据下逐项自动跳过
+    for key in ["Q025同伴记录", "D17无记录样例", "D01/Q043当前记录",
+                "D14较好表现样例"]:
         assert key not in paths
 
 

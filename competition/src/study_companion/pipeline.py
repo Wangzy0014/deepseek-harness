@@ -157,6 +157,22 @@ def _write_samples(dataset, clean_result, out: Path, paths: Dict) -> None:
         })
         paths["D01/Q043当前记录"] = sample_dir / "d01_q043_current_record.json"
 
+    # D14/N02 较好表现样例（验收书 T+4h 项：验证覆盖限制与差异化建议）
+    if "D14" in dataset.students:
+        d14_n02 = stats_mod.student_node_stats(dataset, clean_result, "D14", "N02")
+        d14_all = stats_mod.student_node_stats(dataset, clean_result, "D14", "N01")
+        d14_records = evidence_mod.query(
+            dataset, clean_result, student="D14", node="N02")
+        _write_json(sample_dir / "d14_good_performance.json", {
+            "说明": "D14 较好表现样例（验收书 T+4h 项）：供差异化建议与"
+                    "变式/迁移任务设计使用。注意覆盖限制——用得分率时须结合"
+                    "覆盖表，不足处不推断为掌握。",
+            "D14_N01统计": d14_all,
+            "D14_N02统计": d14_n02,
+            "D14_N02当前记录": d14_records,
+        })
+        paths["D14较好表现样例"] = sample_dir / "d14_good_performance.json"
+
     # Q025 同题记录（同伴比较样例）
     q025_rows = []
     if "Q025" in dataset.questions:
