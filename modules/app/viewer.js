@@ -338,7 +338,7 @@ function vPlan() {
       vEl('dt', '', '达成后'), vEl('dd', '', activity.next_if_success ?? '减少提示并进入同指标变式。'),
       vEl('dt', '', '未达成'), vEl('dd', '', activity.next_if_not ?? '保留新证据并由教师调整。'),
       vEl('dt', '', '何时调整'), vEl('dd', '', activity.adjust_when))
-    vMain.append(vEl('section', 'panel activity', vEl('div', 'activity-heading', vEl('span', 'activity-number', String(activity.order).padStart(2, '0')),
+    return vEl('section', 'panel activity', vEl('div', 'activity-heading', vEl('span', 'activity-number', String(activity.order).padStart(2, '0')),
       vEl('div', '', vEl('span', 'eyebrow', vKindNames[activity.kind]), vEl('h2', '', activity.goal))),
       vEl('p', 'preserve', activity.rationale), activity.selection_reason ? vEl('p', 'selection-reason', vSelectionNames[activity.selection_reason] ?? '依据当前学习需求选择') : null,
       vEl('p', 'activity-prompt', activity.prompt), questions,
