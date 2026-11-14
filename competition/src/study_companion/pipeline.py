@@ -129,11 +129,16 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
 
 
 def _write_samples(dataset, clean_result, out: Path, paths: Dict) -> None:
-    """T+2h 团队样例（真实数据衍生，仅本地 outputs/，不入库）.
+    # 步骤诊断线索（"末步结论 vs 最终作答"矛盾，供诊断模块定位）
+    from . import leads as leads_mod
+    lead_list = leads_mod.answer_process_leads(dataset, clean_result)
+    payload = leads_mod.leads_payload(dataset, clean_result)
+    payload["数量"] = len(lead_list)
+    payload["线索"] = lead_list
+    _write_json(out / "samples" / "answer_process_conflicts.json", payload)
+    paths["步骤诊断线索"] = out / "samples" / "answer_process_conflicts.json"
 
-    样例目标编号（D01 / Q043 / Q025 / D17）只存在于真实赛题数据；
-    合成数据下逐项自动跳过。
-    """
+    # 以下样例目标编号只存在于真实赛题数据；合成数据下逐项自动跳过
     sample_dir = out / "samples"
 
     # D01/N02 及 Q043 当前记录（步骤诊断与辅导的首条真实链路样例）
