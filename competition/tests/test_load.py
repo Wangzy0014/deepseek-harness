@@ -98,3 +98,35 @@ def test_reference_integrity(tmp_path, dataset):
 def FIXTURE_DIR_OF(name):  # pragma: no cover - 辅助
     from conftest import FIXTURES
     return FIXTURES
+
+
+def test_scored_without_score_rejected(tmp_path):
+    """契约强制：已评分必须带整数得分/满分（杜绝统计层口径分叉）。"""
+    import shutil
+    from conftest import FIXTURES
+    for name in ["课程要求.csv", "题目与材料.csv", "模拟学生.csv",
+                 "测验节点.csv", "字段说明.csv"]:
+        shutil.copy(FIXTURES / name, tmp_path / name)
+    lines = open(FIXTURES / "作答记录.csv", encoding="utf-8-sig").read().splitlines()
+    lines.append("XR0098,E01,QX01,T01,EN01,E01-EN01-QX01,1,"
+                 "2026-01-20T09:00:00+08:00,已评分,,,A,,")
+    open(tmp_path / "作答记录.csv", "w", encoding="utf-8-sig", newline="").write(
+        "\n".join(lines) + "\n")
+    with pytest.raises(LoadError, match="已评分但得分/满分为空"):
+        load_all(tmp_path)
+
+
+def test_pending_with_score_rejected(tmp_path):
+    """契约强制：待评分不得携带得分。"""
+    import shutil
+    from conftest import FIXTURES
+    for name in ["课程要求.csv", "题目与材料.csv", "模拟学生.csv",
+                 "测验节点.csv", "字段说明.csv"]:
+        shutil.copy(FIXTURES / name, tmp_path / name)
+    lines = open(FIXTURES / "作答记录.csv", encoding="utf-8-sig").read().splitlines()
+    lines.append("XR0097,E01,QX01,T01,EN01,E01-EN01-QX01,1,"
+                 "2026-01-20T09:00:00+08:00,待评分,1,1,A,,")
+    open(tmp_path / "作答记录.csv", "w", encoding="utf-8-sig", newline="").write(
+        "\n".join(lines) + "\n")
+    with pytest.raises(LoadError, match="却携带得分"):
+        load_all(tmp_path)

@@ -86,6 +86,8 @@ def generate_dataset(seed: int, out_dir: Path) -> Path:
         score = kw.get("得分")
         if score is None:
             score = rng.randint(0, full) if status == "已评分" else ""
+        elif status != "已评分":
+            score = ""  # 契约：待评分/未作答不得携带得分
         final = kw.get("作答", f"ans{rid}")
         pts = kw.get("评分点")
         if pts is None and status == "已评分" and qtype == "解答题":

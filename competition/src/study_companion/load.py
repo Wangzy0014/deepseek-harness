@@ -220,6 +220,23 @@ def load_records(data_dir: Path) -> List[AnswerRow]:
         status = r["评分状态"]
         if status not in VALID_STATUSES:
             raise LoadError(f"{r['记录编号']} 评分状态非法: {status!r}")
+        # 契约强制（字段说明：得分为空时=待评分或未作答）：
+        # 已评分必须有整数得分与满分；待评分/未作答不得携带得分。
+        # 提前到加载层拒绝，杜绝统计层出现"已评分却无分数"的口径分叉。
+        if status == SCORED:
+            if not r["得分"] or not r["满分"]:
+                raise LoadError(
+                    f"{r['记录编号']} 已评分但得分/满分为空：违反字段契约"
+                    f"（得分={r['得分']!r}，满分={r['满分']!r}），请先人工核对")
+            try:
+                int(r["得分"]); int(r["满分"])
+            except ValueError:
+                raise LoadError(
+                    f"{r['记录编号']} 已评分但得分/满分不是整数："
+                    f"（得分={r['得分']!r}，满分={r['满分']!r}）")
+        elif r["得分"]:
+            raise LoadError(
+                f"{r['记录编号']} {status}却携带得分 {r['得分']!r}：违反字段契约")
         row = AnswerRow(
             record_id=r["记录编号"], student_id=r["学生编号"],
             material_id=r["材料编号"], theme_recorded=r["主题编号"],
