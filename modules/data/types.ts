@@ -14,6 +14,13 @@ export interface DatasetInput {
 export interface PrepareOptions {
   source_mode?: 'live' | 'fixture'
   producer_version?: string
+  /**
+   * 处置策略（2026-11-14 老师说明确定：异常数据由系统检测并处理——能纠正的
+   * 纠正、不能仲裁的忽略）。differentiated = 默认：主题/满分以题库修正、
+   * 评分点自洽（合计==满分）的越界得分按评分点合计纠正、语义复核保留原分
+   * 并计入统计；conservative = 全部隔离待复核（旧行为，team-policy-v1）。
+   */
+  policy?: 'differentiated' | 'conservative'
 }
 
 /** A human-review reason; no score correction is inferred from an issue. */
@@ -41,6 +48,8 @@ export interface EvidenceRecord {
   include_in_statistics: boolean
   quality_issues: QualityIssue[]
   action: 'include' | 'exclude' | 'review'
+  /** 差异化处置产生的显式修正值；original_values 始终保留原文。 */
+  corrected?: { topic_id?: string; score?: number; max_score?: number }
   original_values: CsvRow
   source: { file: string; row_number: number }
 }
@@ -49,7 +58,7 @@ export interface EvidenceRecord {
 export interface PreparedDataset {
   schema_version: 'team-v1'
   dataset_version: string
-  policy_version: 'team-policy-v1'
+  policy_version: 'team-policy-v1' | 'team-policy-v2'
   producer_version: string
   source_mode: 'live' | 'fixture'
   input: DatasetInput
@@ -62,6 +71,8 @@ export interface PreparedDataset {
     revised_event_count: number
     grading_status_counts: Record<string, number>
     included_count: number
+    /** 真正计入得分统计的当前记录数（含保留复核的语义复核记录）。 */
+    stat_included_count: number
     review_count: number
     excluded_count: number
   }
@@ -77,7 +88,7 @@ export interface StudentScope {
 export interface ResultEnvelope<T> {
   schema_version: 'team-v1'
   dataset_version: string
-  policy_version: 'team-policy-v1'
+  policy_version: 'team-policy-v1' | 'team-policy-v2'
   producer_version: string
   source_mode: 'live' | 'fixture'
   scope: Record<string, string | boolean>

@@ -88,14 +88,22 @@ test('peers exclude the requesting student before determining the common item se
   assert.deepEqual(response.evidence_ids, [])
 })
 
-test('quality-review records remain traceable and never enter a common-item mean', () => {
+test('score-conflict records follow the team disposition policy and stay traceable', () => {
   const input = weightInput()
   input.records.find(row => row.记录编号 === 'S2-A3')!.得分 = '99'
-  const response = compare_with_peers(prepare_dataset(input), { student_id: 'S1', node_id: 'M1' })
-  assert.equal(response.result_status, 'needs_review')
-  assert.deepEqual(response.payload.quality_record_ids, ['S2-A3'])
-  assert.deepEqual(response.payload.shared_item_ids, ['A1'])
-  assert.ok(!response.evidence_ids.includes('S2-A3'))
+  // 差异化处置（默认，老师口径）：评分点合计==满分 -> 纠正为 3 进入统计，
+  // 修正值参与共同题均值，原文与修正痕迹保留可追溯。
+  const repaired = compare_with_peers(prepare_dataset(input), { student_id: 'S1', node_id: 'M1' })
+  assert.equal(repaired.result_status, 'ok')
+  assert.deepEqual(repaired.payload.shared_item_ids, ['A1', 'A3'])
+  assert.ok(repaired.evidence_ids.includes('S2-A3'))
+  // 保守模式（team-policy-v1）：全部隔离待复核，不进均值。
+  const conservative = compare_with_peers(
+    prepare_dataset(input, { policy: 'conservative' }), { student_id: 'S1', node_id: 'M1' })
+  assert.equal(conservative.result_status, 'needs_review')
+  assert.deepEqual(conservative.payload.quality_record_ids, ['S2-A3'])
+  assert.deepEqual(conservative.payload.shared_item_ids, ['A1'])
+  assert.ok(!conservative.evidence_ids.includes('S2-A3'))
 })
 
 test('comparisons isolate nodes and reject unknown or out-of-node identifiers', () => {
@@ -138,19 +146,28 @@ test('class summaries distinguish coverage, pending review, absent students, and
     make_record(),
     make_record({ 记录编号: 'R2', 作答事件编号: 'E2', 材料编号: 'A3', 满分: '2', 得分: '5', 评分点得分: 'A3P1=2' }),
   ])
+  // 差异化处置（默认）：R2 得分5>满分2 但评分点合计2==满分 -> 纠正为2计入
   const dataset = prepare_dataset(input)
   const response = analyze_class(dataset, { class_id: 'C1', node_id: 'M1' })
-  assert.equal(response.result_status, 'needs_review')
+  assert.equal(response.result_status, 'ok')
   assert.equal(response.payload.student_count, 2)
   assert.equal(response.payload.observed_student_count, 1)
   assert.equal(response.payload.scored_student_count, 1)
   assert.equal(response.payload.record_count, 2)
-  assert.equal(response.payload.valid_record_count, 1)
-  assert.equal(response.payload.review_count, 1)
-  assert.equal(response.payload.earned_score, 1)
-  assert.equal(response.payload.possible_score, 3)
+  assert.equal(response.payload.valid_record_count, 2)
+  assert.equal(response.payload.review_count, 0)
+  assert.equal(response.payload.earned_score, 3)
+  assert.equal(response.payload.possible_score, 5)
   assert.equal(response.payload.coverage.available_item_count, 2)
-  assert.equal(response.payload.coverage.valid_item_count, 1)
+  assert.equal(response.payload.coverage.valid_item_count, 2)
+  // 保守模式：R2 隔离待复核（旧行为）
+  const conservative = analyze_class(
+    prepare_dataset(input, { policy: 'conservative' }), { class_id: 'C1', node_id: 'M1' })
+  assert.equal(conservative.result_status, 'needs_review')
+  assert.equal(conservative.payload.valid_record_count, 1)
+  assert.equal(conservative.payload.review_count, 1)
+  assert.equal(conservative.payload.earned_score, 1)
+  assert.equal(conservative.payload.possible_score, 3)
   assert.equal(response.payload.topics.find(row => row.topic_id === 'T2')?.taught, false)
   assert.equal(response.payload.student_summaries.find(row => row.student_id === 'S2')?.score_rate, null)
   assert.equal(analyze_class(dataset, { class_id: 'C1', node_id: 'M2' }).result_status, 'insufficient_data')

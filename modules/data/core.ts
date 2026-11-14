@@ -77,11 +77,11 @@ function pointMaximums(text: string): Map<string, number> | null {
   return maximums.size > 0 ? maximums : null
 }
 
-function checkPoints(record: EvidenceRecord, item: CsvRow, issues: QualityIssue[]): void {
+function checkPoints(record: EvidenceRecord, item: CsvRow, issues: QualityIssue[]): number | null {
   const maximums = pointMaximums(item['评分点'] ?? '')
   if (!maximums) {
     issues.push({ code: 'invalid_rubric', message: '题目评分点缺失或无法按“编号 说明 分值分”读取。' })
-    return
+    return null
   }
   const values = new Map<string, number>()
   let malformed = false
@@ -112,11 +112,24 @@ function checkPoints(record: EvidenceRecord, item: CsvRow, issues: QualityIssue[
   if (itemMaximum !== null && !near(maximumTotal, itemMaximum)) {
     issues.push({ code: 'rubric_maximum_mismatch', message: '题目评分点满分之和与题目满分不一致。' })
   }
+  return total
+}
+
+/** 有效值读取：corrected 优先，original 兜底（与 Python 端 effective_* 对齐）。 */
+function effectiveTopic(record: EvidenceRecord): string {
+  return record.corrected?.topic_id ?? record.topic_id
+}
+function effectiveScore(record: EvidenceRecord): number | null {
+  return record.corrected?.score ?? record.score
+}
+function effectiveMax(record: EvidenceRecord): number | null {
+  return record.corrected?.max_score ?? record.max_score
 }
 
 function evaluateRecord(
   row: CsvRow, rowNumber: number, students: Map<string, CsvRow>, items: Map<string, CsvRow>,
   nodes: Map<string, CsvRow>, indicators: Map<string, CsvRow>,
+  policy: 'differentiated' | 'conservative',
 ): EvidenceRecord {
   const revisionText = required(row, '修订版本', '作答记录')
   const revision = Number(revisionText)
@@ -172,13 +185,14 @@ function evaluateRecord(
   if (!['已评分', '待评分', '未作答'].includes(record.grading_status)) {
     issues.push({ code: 'unknown_grading_status', message: '评分状态不属于已评分、待评分、未作答。' })
   }
+  let pointsTotal: number | null = null
   if (record.grading_status === '已评分') {
     if (record.score === null) issues.push({ code: 'missing_score', message: '已评分记录的得分缺失或不是有限十进制数。' })
     if (record.score !== null && (record.score < 0 || (record.max_score !== null && record.score > record.max_score))) {
       issues.push({ code: 'score_out_of_range', message: '记录得分小于零或超过满分。' })
     }
     if (item) {
-      checkPoints(record, item, issues)
+      pointsTotal = checkPoints(record, item, issues)
       const referenceAnswer = normalizeAnswer(item['参考答案'] ?? '')
       if (record.score === 0 && referenceAnswer !== '' && normalizeAnswer(record.answer) === referenceAnswer) {
         issues.push({ code: 'answer_score_conflict', message: '最终答案与参考答案规范化后相同但记零分，需人工复核，未自动改分。' })
@@ -190,8 +204,50 @@ function evaluateRecord(
   if (record.grading_status === '未作答' && (record.answer.trim() !== '' || record.steps.trim() !== '')) {
     issues.push({ code: 'unanswered_with_response', message: '未作答状态仍含最终答案或解答过程，需核对评分状态。' })
   }
-  record.include_in_statistics = record.grading_status === '已评分' && issues.length === 0
-  record.action = issues.length > 0 ? 'review' : record.include_in_statistics ? 'include' : 'exclude'
+  // ---- 差异化处置（team-policy-v2，与 Python 参考实现口径一致）----
+  if (policy === 'differentiated') {
+    // a) 主题以题库为准修正（原文保留于 original_values）
+    if (item && issues.some(issue => issue.code === 'topic_mismatch')) {
+      record.corrected = { ...(record.corrected ?? {}), topic_id: item['主题编号'] ?? record.topic_id }
+    }
+    // b) 记录满分以题库为准修正
+    const itemMaximum = item ? numeric(item['满分']) : null
+    if (itemMaximum !== null && issues.some(issue => issue.code === 'maximum_mismatch')) {
+      record.corrected = { ...(record.corrected ?? {}), max_score: itemMaximum }
+    }
+    // c) 得分超满分且评分点合计==有效满分（证据自洽）-> 按评分点合计纠正
+    const effectiveMaxNow = record.corrected?.max_score ?? record.max_score
+    if (record.score !== null && effectiveMaxNow !== null && record.score > effectiveMaxNow
+        && pointsTotal !== null && near(pointsTotal, effectiveMaxNow)) {
+      record.corrected = { ...(record.corrected ?? {}), score: pointsTotal }
+    }
+  }
+  const corrected = policy === 'differentiated'
+    && record.corrected !== undefined && Object.keys(record.corrected).length > 0
+  // 语义复核（answer_score_conflict）：无其他分值完整性问题时保留原分计入统计
+  const semanticKept = policy === 'differentiated'
+    && issues.some(issue => issue.code === 'answer_score_conflict')
+    && !issues.some(issue => ['missing_score', 'score_out_of_range',
+      'invalid_point_scores', 'point_total_mismatch', 'invalid_rubric'].includes(issue.code))
+  // 阻断性 issue = 结构性错误或不可仲裁矛盾；差异化处置已修正/保留复核的不阻断
+  const nonBlocking = new Set<string>()
+  if (policy === 'differentiated') {
+    if (corrected && record.corrected?.topic_id !== undefined) nonBlocking.add('topic_mismatch')
+    if (corrected && record.corrected?.max_score !== undefined) nonBlocking.add('maximum_mismatch')
+    if (corrected && record.corrected?.score !== undefined) {
+      nonBlocking.add('score_out_of_range')
+      nonBlocking.add('point_total_mismatch')
+    }
+    if (semanticKept) nonBlocking.add('answer_score_conflict')
+  }
+  const blocking = issues.filter(issue => !nonBlocking.has(issue.code))
+  record.include_in_statistics = record.grading_status === '已评分'
+    && blocking.length === 0
+    && effectiveScore(record) !== null
+    && effectiveMax(record) !== null
+  record.action = blocking.length > 0 || semanticKept
+    ? 'review'
+    : record.include_in_statistics ? 'include' : 'exclude'
   return record
 }
 
@@ -213,6 +269,7 @@ function recordOrder(a: EvidenceRecord, b: EvidenceRecord): number {
  * @throws If identifiers, revision order, or equally identified source rows are ambiguous.
  */
 export function prepare_dataset(input: DatasetInput, options: PrepareOptions = {}): PreparedDataset {
+  const policy = options.policy ?? 'differentiated'
   const tables: DatasetInput = {
     students: uniqueRows(input.students), items: uniqueRows(input.items), nodes: uniqueRows(input.nodes),
     requirements: uniqueRows(input.requirements), records: uniqueRows(input.records),
@@ -228,7 +285,7 @@ export function prepare_dataset(input: DatasetInput, options: PrepareOptions = {
     const key = canonical(row)
     if (!sourceRows.has(key)) sourceRows.set(key, index + 2)
   })
-  const history = tables.records.map(row => evaluateRecord(row, sourceRows.get(canonical(row))!, students, items, nodes, indicators)).sort(recordOrder)
+  const history = tables.records.map(row => evaluateRecord(row, sourceRows.get(canonical(row))!, students, items, nodes, indicators, policy)).sort(recordOrder)
   const events = new Map<string, Map<number, EvidenceRecord>>()
   for (const record of history) {
     let versions = events.get(record.event_id)
@@ -251,13 +308,15 @@ export function prepare_dataset(input: DatasetInput, options: PrepareOptions = {
   }).sort(recordOrder)
   const datasetVersion = `sha256:${createHash('sha256').update(JSON.stringify(tables)).digest('hex')}`
   return {
-    schema_version: 'team-v1', dataset_version: datasetVersion, policy_version: 'team-policy-v1',
+    schema_version: 'team-v1', dataset_version: datasetVersion,
+    policy_version: policy === 'differentiated' ? 'team-policy-v2' : 'team-policy-v1',
     producer_version: options.producer_version ?? 'study-data@0.1.0', source_mode: options.source_mode ?? 'live',
     input: tables, history, current,
     summary: {
       raw_record_count: input.records.length, unique_version_count: history.length, current_event_count: current.length,
       revised_event_count: [...events.values()].filter(versions => versions.size > 1).length,
       grading_status_counts: countStatuses(current), included_count: current.filter(record => record.action === 'include').length,
+      stat_included_count: current.filter(record => record.include_in_statistics).length,
       review_count: current.filter(record => record.action === 'review').length,
       excluded_count: current.filter(record => record.action === 'exclude').length,
     },
@@ -277,8 +336,8 @@ function envelope<T>(
 
 function summarize(records: EvidenceRecord[]): ScoreSummary {
   const valid = records.filter(record => record.include_in_statistics)
-  const earned = valid.length > 0 ? valid.reduce((sum, record) => sum + record.score!, 0) : null
-  const possible = valid.length > 0 ? valid.reduce((sum, record) => sum + record.max_score!, 0) : null
+  const earned = valid.length > 0 ? valid.reduce((sum, record) => sum + effectiveScore(record)!, 0) : null
+  const possible = valid.length > 0 ? valid.reduce((sum, record) => sum + effectiveMax(record)!, 0) : null
   return {
     record_count: records.length, valid_record_count: valid.length, earned_score: earned, possible_score: possible,
     score_rate: earned !== null && possible !== null && possible > 0 ? earned / possible : null,
@@ -309,7 +368,7 @@ export function get_student_stats(dataset: PreparedDataset, scope: StudentScope)
   const payload: StudentStats = {
     ...summarize(records), student_id: scope.student_id, class_id: student['模拟班级编号']!, node_id: scope.node_id,
     grading_status_counts: countStatuses(records),
-    topics: topicIds.map(topicId => ({ ...summarize(records.filter(record => record.topic_id === topicId)), topic_id: topicId, taught: taught.has(topicId) })),
+    topics: topicIds.map(topicId => ({ ...summarize(records.filter(record => effectiveTopic(record) === topicId)), topic_id: topicId, taught: taught.has(topicId) })),
     indicators: dataset.input.requirements.map(requirement => {
       const indicatorId = requirement['指标编号']!
       return {

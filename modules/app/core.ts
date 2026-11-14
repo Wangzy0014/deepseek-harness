@@ -68,7 +68,8 @@ export function build_workspace(dataset: PreparedDataset): ResultEnvelope<Worksp
   const payload: WorkspacePayload = {
     title: '智慧学伴', engine: 'local_rules', students, nodes, classes,
     summary: dataset.summary, curriculum: get_curriculum(dataset), cases, class_reports: classReports,
-    quality_records: dataset.current.filter(record => record.action === 'review'), browser_snapshot: browserSnapshot,
+    // 质量记录 = 有 quality_issues 的全部当前记录（处置后仍可追溯，与验收书 6 条一致）
+    quality_records: dataset.current.filter(record => record.quality_issues.length > 0), browser_snapshot: browserSnapshot,
   }
   const limitations = [
     '本作品使用本地规则、统计和材料索引，未调用远程大模型。',

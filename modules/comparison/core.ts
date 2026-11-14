@@ -109,8 +109,11 @@ function classMembers(dataset: PreparedDataset, classId: string): string[] {
 
 function summarize(records: EvidenceRecord[]): ScoreSummary {
   const valid = records.filter(row => row.include_in_statistics)
-  const earned = valid.length ? valid.reduce((sum, row) => sum + row.score!, 0) : null
-  const possible = valid.length ? valid.reduce((sum, row) => sum + row.max_score!, 0) : null
+  // 有效值（corrected 优先，原文保留于 original_values）——与数据模块差异化处置一致
+  const effectiveScore = (row: typeof valid[number]) => row.corrected?.score ?? row.score
+  const effectiveMax = (row: typeof valid[number]) => row.corrected?.max_score ?? row.max_score
+  const earned = valid.length ? valid.reduce((sum, row) => sum + effectiveScore(row)!, 0) : null
+  const possible = valid.length ? valid.reduce((sum, row) => sum + effectiveMax(row)!, 0) : null
   return {
     record_count: records.length, valid_record_count: valid.length,
     earned_score: earned, possible_score: possible,
@@ -123,7 +126,7 @@ function meanForItem(records: EvidenceRecord[]): { mean: number; studentCount: n
   const rates = new Map<string, number[]>()
   for (const row of records) {
     const studentRates = rates.get(row.student_id) ?? []
-    studentRates.push(row.score! / row.max_score!)
+    studentRates.push((row.corrected?.score ?? row.score)! / (row.corrected?.max_score ?? row.max_score)!)
     rates.set(row.student_id, studentRates)
   }
   const studentMeans = [...rates.values()].map(values => values.reduce((sum, value) => sum + value, 0) / values.length)

@@ -25,3 +25,21 @@
 - 视觉检查限制：浏览器工具的安全策略拒绝打开 `file://` 报告，只允许HTTP/HTTPS；未绕过。改用无网络的合成输入离线DOM测试验证交互，不能据此声称真实浏览器视觉验收。`happy-dom@21.0.4`仅为模块本地开发依赖，不做全局安装。
 - 最终本地验证：设置 `STUDY_DATA_DIR` 后执行 `npm run study:test`，构建与严格类型检查通过；数据模块36项、其余业务与集成47项，共83项通过，0失败、0跳过，含7项离线DOM交互。构建后的CLI另实际导出正式报告 `tmp/study-data/reports/release-01` 与合成演示 `tmp/study-data/public-demo-release-01/report`，机器引用核验通过、真人复验状态保留pending。47个自有源码和文档文件的空白/相对链接检查通过；原始数据、报告、依赖与编译目录经Git忽略核对。上述验证只覆盖本业务，不冒称Harness全仓或远程模型会话通过；远程CI由专用工作流另行运行。
 - 后续参赛交付：指定队员真人复验、独立评测、实际浏览器视觉检查、教师审核及正式方案PDF/演示视频/答辩PPT尚待完成；本次为整体可运行初版，不冒称完成真实教学成效验证或正式比赛验收。
+
+## 2026-11-14 数据模块口径统一（魏文宇接管 modules/data）
+
+- 依据老师 2026-11-14 说明（异常数据由系统检测并处理：忽略/纠正），
+  `modules/data` 默认策略从保守全隔离切换为**差异化处置**
+  （`team-policy-v2`）：主题/满分以题库修正、评分点自洽（合计==满分）
+  的越界得分按评分点合计纠正、语义复核保留原分计入统计；
+  `policy: 'conservative'` 可退回旧行为（team-policy-v1）。
+- `EvidenceRecord.corrected` 显式携带修正值，`original_values` 恒为原文。
+- 与 Python 参考实现（`competition/src/study_companion`，481 项测试）
+  完成**跨语言对拍**：真实数据全部 40 学生 × 2 节点的
+  earned/possible/valid 完全一致（live 测试
+  `differentiated policy numbers match the Python reference implementation`，
+  基准导出：`competition` 目录下
+  `PYTHONPATH=src python3 -m study_companion pipeline` 后由脚本写入
+  `tmp/study-diff/python_reference.json`，经 `STUDY_DIFF_REFERENCE` 传入）。
+- comparison 求和改用有效值；app 的 quality_records 筛选从
+  action==review 改为 quality_issues 非空（6 条冲突处置后仍全量可追溯）。

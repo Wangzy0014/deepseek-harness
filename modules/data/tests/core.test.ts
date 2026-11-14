@@ -13,8 +13,8 @@ test('unrecognized grading text stays a counted review item even when it matches
   }
 })
 
-function prepare(records: CsvRow[] = [make_record()]): PreparedDataset {
-  return prepare_dataset(make_input(records), { source_mode: 'fixture', producer_version: 'test' })
+function prepare(records: CsvRow[] = [make_record()], options: { policy?: 'differentiated' | 'conservative' } = {}): PreparedDataset {
+  return prepare_dataset(make_input(records), { source_mode: 'fixture', producer_version: 'test', ...options })
 }
 
 test('a current event uses its highest revision while evidence retains both versions', () => {
@@ -85,7 +85,8 @@ test('quality checks quarantine invalid totals, associations, and contradictory 
   ]
   for (const [label, fields] of examples) {
     await t.test(label, () => {
-      const ds = prepare([make_record(fields)])
+      // 保守模式（team-policy-v1）：全部隔离待复核
+      const ds = prepare([make_record(fields)], { policy: 'conservative' })
       const current = ds.current[0]
       assert.ok(current)
       assert.equal(current.include_in_statistics, false)
@@ -93,6 +94,36 @@ test('quality checks quarantine invalid totals, associations, and contradictory 
       assert.equal(current.action, 'review')
     })
   }
+})
+
+test('differentiated policy corrects self-consistent conflicts and keeps semantics reviewable', () => {
+  // 评分点自洽（合计==满分）的越界得分 -> 纠正为评分点合计并计入（老师口径）
+  const repaired = prepare([make_record({ 得分: '4', 评分点得分: 'A1P1=1；A1P2=1；A1P3=1' })])
+  const repairedRow = repaired.current[0]!
+  assert.equal(repaired.policy_version, 'team-policy-v2')
+  assert.equal(repairedRow.corrected?.score, 3)
+  assert.equal(repairedRow.original_values['得分'], '4')
+  assert.equal(repairedRow.include_in_statistics, true)
+
+  // 主题誊录错误 -> 以题库为准修正并计入
+  const topic = prepare([make_record({ 主题编号: 'T2' })])
+  const topicRow = topic.current[0]!
+  assert.equal(topicRow.corrected?.topic_id, 'T1')
+  assert.equal(topicRow.original_values['主题编号'], 'T2')
+  assert.equal(topicRow.include_in_statistics, true)
+
+  // 记录满分与题库不一致 -> 以题库为准修正分母
+  const maximum = prepare([make_record({ 满分: '4' })])
+  const maximumRow = maximum.current[0]!
+  assert.equal(maximumRow.corrected?.max_score, 3)
+  assert.equal(maximumRow.original_values['满分'], '4')
+  assert.equal(maximumRow.include_in_statistics, true)
+
+  // 评分点矛盾无自洽证据（合计!=满分）-> 仍隔离
+  const mismatch = prepare([make_record({ 得分: '2' })])
+  const mismatchRow = mismatch.current[0]!
+  assert.equal(mismatchRow.include_in_statistics, false)
+  assert.equal(mismatchRow.action, 'review')
 })
 
 test('a real scored zero remains zero while pending and unanswered scores remain absent', () => {
