@@ -1,0 +1,105 @@
+# 智慧学伴 · competition 目录（四人协作）
+
+本目录承载"智慧学伴"赛题（学情诊断与个性化学习智能体）的全部赛题代码，
+与仓库其余部分（DeepSeek Harness 本体）互不影响。
+
+## 分工与模块地图（对应《四人24小时开发任务与验收书》）
+
+| 成员 | 开发主责 | 目录 / 入口 |
+| --- | --- | --- |
+| 魏文宇 | 数据处理与个人统计 | `src/study_companion/`（本模块，见下） |
+| 宗博文 | 对比与班级分析 | 消费 `stats.class_node_stats(exclude_students=...)` |
+| 纪宏锋 | 课程资料与学习诊断 | 消费 `evidence.query(...)` + `题目与材料` 表 |
+| 王振宇 | 个性化建议与分步辅导 | 消费 `stats.student_node_stats(...)` + 覆盖表 |
+
+`shared/` 为共同资产（T+2h 冻结）：`shared/contracts/` 是模块间输入输出
+契约样例，`shared/fixtures/synthetic/` 是无真实数据也能联调的合成数据。
+
+## 魏文宇模块：study_companion
+
+- **load** 六表加载与字段映射（结构校验、引用完整性）
+- **clean** 统一清洗入口（全队唯一）：版本归并 + 异常识别与处置
+- **quality** 质量报告：归并摘要、异常清单（处置 + 依据）
+- **stats** 个人统计：有效题数 / 各状态数量 / 主题与指标得分 / 班级汇总
+- **coverage** 覆盖与范围：无记录 ≠ 未掌握，节点不混比
+- **evidence** 证据查询：按学生 / 题目 / 记录 / 指标，含全部历史版本
+- **pipeline / cli** 全流程编排与命令行
+
+### 统计口径（务必全队一致）
+
+1. **版本归并**：同一作答事件只保留最高修订版本；旧版本进 `history` 可查。
+2. **异常处置**（每条都有依据，见 `quality_report.json`）：
+   - 主题与题库不一致 → 以题库为准修正（corrected，保留原文）
+   - 得分超满分 / 总分与评分点合计矛盾 → 隔离（excluded，不进统计）
+   - 材料超出节点可用范围 → 不改节点、隔离
+   - 答案与参考答案一致却记 0 分 → 保留原分 + 语义复核标记
+3. **状态区别**：待评分、未作答、无记录分别计数；零分（0/1 → 0.0）与
+   尚未教学（`未教学（本节点未测量）`）严格区分。
+4. **分母**：得分率分母 = 计入统计的已评分记录满分之和。
+
+### 快速开始
+
+```sh
+# 1) 放数据：把赛题包 4_赛题数据/模拟学情数据/*.csv 复制到 data/raw/
+#    （或 export STUDY_COMPANION_DATA_DIR=/path/to/模拟学情数据）
+cd competition
+
+# 2) 自检（验收口径：806 行 -> 799 事件；6 条已知冲突全部识别）
+python3 -m study_companion check            # 需 PYTHONPATH=src（见下）
+
+# 3) 全流程产物 -> outputs/（字段映射、当前有效记录、质量报告、统计、覆盖、样例）
+PYTHONPATH=src python3 -m study_companion pipeline
+
+# 4) 常用查询
+# 命令示例用合成 ID（E/EC/EN/QX 系列）；真实数据 ID 同样用法，样例见本机 outputs/samples/
+PYTHONPATH=src python3 -m study_companion stats --student E01 [--node EN01] [--json]
+PYTHONPATH=src python3 -m study_companion class --class EC01 --node EN02 --exclude E01
+PYTHONPATH=src python3 -m study_companion evidence --question QX02
+PYTHONPATH=src python3 -m study_companion evidence --student E05 --node EN02
+
+# 5) 测试（无需真实数据，使用合成 fixtures）
+python3 -m pytest tests/
+```
+
+Python ≥ 3.9，仅标准库；`pytest` 仅测试需要。
+
+### 队友怎么接（统一清洗入口）
+
+```python
+import sys; sys.path.insert(0, "competition/src")
+from study_companion.load import load_all
+from study_companion.clean import build_valid_records
+
+dataset = load_all("competition/data/raw")          # 或环境变量指定
+clean = build_valid_records(dataset)                 # 唯一清洗入口
+for vr in clean.valid_records:                       # 当前有效记录
+    ...  # vr.record.* 原始字段；vr.effective_theme/effective_score/stats_flag
+```
+
+不要重复实现清洗；发现口径问题找魏文宇改 `clean.py` 一处。
+
+## 数据安全（重要）
+
+- 仓库是**公开**仓库；赛题规则：赛事数据仅限本次大赛使用，**不得外传**。
+- 因此 `data/raw/` 与 `outputs/` 均已 gitignore：真实数据与其衍生产物
+  只留在本机，不上 GitHub。
+- 代码、测试、`shared/fixtures/synthetic/`（自造 E/X 系列编号）、
+  `shared/contracts/`（合成数据生成的样例）可安全入库。
+- 需要给队友传真实样例时走队内渠道（微信等），不走仓库。
+
+## 测试与验收自检
+
+```sh
+python3 -m pytest tests/            # 52 项：加载/清洗/统计/覆盖/证据/管线/验收项
+```
+
+`tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
+状态区别、统计复算、比较口径、覆盖与范围、通用性：打乱行序/换学生/
+重复加载结果不变）。真实数据自检（本机运行）：
+
+```sh
+PYTHONPATH=src python3 -m study_companion check
+# 期望：806 行 -> 799 事件（7 条 v2 归并不重复计数）；
+# 异常 6 条 = 主题不一致1 + 评分点矛盾1 + 得分超满分2 + 节点范围外1 + 语义复核1
+#（具体记录编号以 check 本机输出为准，不入库）；状态分布 已评分790/待评分4/未作答5
+```

@@ -1,0 +1,9 @@
+# 赛题数据与真实数据产物不入库（仓库为公开仓库；
+# 赛题规则：赛事数据仅限本次大赛使用，不得外传）
+data/raw/*
+!data/raw/README.md
+outputs/
+tests/_pipeline_out/
+__pycache__/
+*.pyc
+.pytest_cache/
