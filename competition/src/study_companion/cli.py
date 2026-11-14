@@ -130,6 +130,28 @@ def cmd_evidence(args) -> int:
     return 0
 
 
+def cmd_sourcecheck(args) -> int:
+    import json as _json
+    from pathlib import Path as _Path
+    from .sourcecheck import verify_sources
+    dataset, _clean = _ctx(args)
+    report = verify_sources(dataset, _Path(args.materials_root))
+    if args.out:
+        target = _Path(args.out)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(_json.dumps(report, ensure_ascii=False, indent=2),
+                          encoding="utf-8")
+        print(f"出处核验报告已写入 {target}")
+    print("结论:", report["结论"])
+    for entry in report["教材条目章节互证"]:
+        print(f"  {entry['材料编号']}: {'✓' if entry['通过'] else '✗ ' + str(entry['未命中章节'])}"
+              f"（声称 {entry['声称章节']}）")
+    pc = report["课标页数核验"]
+    print(f"  课标页数: {pc.get('PDF页对象数')}页 >= 引用最大 {pc.get('课标引用的最大PDF页')}"
+          f" -> {'✓' if pc.get('通过') else '✗'}")
+    return 0 if report["结论"] == "通过" else 1
+
+
 def cmd_mapping(args) -> int:
     rows = field_mapping_rows()
     out = Path(args.out or "field_mapping.csv")
@@ -192,6 +214,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("mapping", parents=[common], help="导出字段映射 CSV")
     p.add_argument("--out")
     p.set_defaults(func=cmd_mapping)
+
+    p = sub.add_parser("sourcecheck", parents=[common],
+                       help="出处核验：引用存在性/章节互证/课标页数（需 --materials-root 资料包根）")
+    p.add_argument("--materials-root", required=True)
+    p.add_argument("--out", help="报告 JSON 输出路径（默认仅打印结论）")
+    p.set_defaults(func=cmd_sourcecheck)
     return parser
 
 

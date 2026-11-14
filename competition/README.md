@@ -23,6 +23,7 @@
 - **stats** 个人统计：有效题数 / 各状态数量 / 主题与指标得分 / 班级汇总
 - **coverage** 覆盖与范围：无记录 ≠ 未掌握，节点不混比
 - **evidence** 证据查询：按学生 / 题目 / 记录 / 指标，含全部历史版本
+- **pdf_text / sourcecheck** 出处核验：纯标准库 PDF 中文抽取（ToUnicode/CID），教材条目×切片章节互证、引用存在性、课标页数结构核验（验收项"无虚构内容"）
 - **leads** 步骤诊断线索：末步结论与最终作答的矛盾筛查（供诊断模块，
   归一化含 NFKC/句读/单位/检验行；定位为线索，不影响统计口径）
 - **pipeline / cli** 全流程编排与命令行
@@ -101,7 +102,7 @@ for vr in clean.valid_records:                       # 当前有效记录
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 481 项：固定样例 80 + 随机性质测试 401
+python3 -m pytest tests/            # 486 项：固定样例 85 + 随机性质测试 401
 ```
 
 - `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
