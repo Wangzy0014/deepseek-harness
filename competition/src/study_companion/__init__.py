@@ -14,4 +14,11 @@
 
 __version__ = "0.1.0"
 
+# 便捷导出：队友最常用的入口（详细 API 见各模块）
 from .config import resolve_data_dir  # noqa: F401
+from .load import load_all  # noqa: F401
+from .clean import build_valid_records  # noqa: F401
+from .stats import student_node_stats, class_node_stats  # noqa: F401
+from .coverage import student_node_coverage  # noqa: F401
+from .evidence import query as evidence_query  # noqa: F401
+from .leads import answer_process_leads  # noqa: F401

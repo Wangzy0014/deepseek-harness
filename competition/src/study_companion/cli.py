@@ -35,8 +35,9 @@ def _ctx(args):
 
 def cmd_pipeline(args) -> int:
     output_dir = resolve_output_dir(args.output_dir)
-    paths = run_pipeline(resolve_data_dir(args.data_dir), output_dir,
-                         repair_consistent_points=args.repair_points)
+    paths = run_pipeline(
+        resolve_data_dir(getattr(args, "data_dir", None)), output_dir,
+        repair_consistent_points=getattr(args, "repair_points", False))
     print(f"完成，产物写入 {output_dir}:")
     for name, p in paths.items():
         if isinstance(p, list):
@@ -97,7 +98,11 @@ def cmd_stats(args) -> int:
 def cmd_class(args) -> int:
     dataset, clean_result = _ctx(args)
     exclude = [s.strip() for s in (args.exclude or "").split(",") if s.strip()]
-    for node_id in sorted(dataset.nodes):
+    node_ids = [args.node] if args.node else sorted(dataset.nodes)
+    if args.node and args.node not in dataset.nodes:
+        print(f"节点不存在: {args.node}", file=sys.stderr)
+        return 2
+    for node_id in node_ids:
         result = stats_mod.class_node_stats(
             dataset, clean_result, args.class_id, node_id, exclude_students=exclude)
         if result is None:
@@ -128,9 +133,9 @@ def cmd_evidence(args) -> int:
 def cmd_mapping(args) -> int:
     rows = field_mapping_rows()
     out = Path(args.out or "field_mapping.csv")
-    import csv as _csv
+    import csv
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
-        writer = _csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
     print(f"字段映射已写入 {out}")
@@ -138,35 +143,43 @@ def cmd_mapping(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="study_companion",
-        description="智慧学伴 · 数据处理与个人统计（负责人：魏文宇）")
-    parser.add_argument("--data-dir", help="赛题数据目录（默认 competition/data/raw）")
-    parser.add_argument("--repair-points", action="store_true",
+    # 公共参数放进父解析器：--data-dir / --repair-points 在子命令前后都可用。
+    # default=SUPPRESS 是关键：子解析器不再用默认值覆盖主解析器已解析的值
+    #（argparse 经典陷阱）；两处都未传时属性不存在，用 getattr 兜底。
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--data-dir", default=argparse.SUPPRESS,
+                        help="赛题数据目录（默认 competition/data/raw）")
+    common.add_argument("--repair-points", action="store_true",
+                        default=argparse.SUPPRESS,
                         help="处置策略B：得分超满分但评分点合计==满分时按评分点合计修正"
                              "（默认策略A：隔离。切换前需全队拍板）")
+
+    parser = argparse.ArgumentParser(
+        prog="study_companion", parents=[common],
+        description="智慧学伴 · 数据处理与个人统计（负责人：魏文宇）")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("pipeline", help="全流程运行并写出 outputs/")
+    p = sub.add_parser("pipeline", parents=[common],
+                       help="全流程运行并写出 outputs/")
     p.add_argument("--output-dir", help="输出目录（默认 competition/outputs）")
     p.set_defaults(func=cmd_pipeline)
 
-    p = sub.add_parser("check", help="数据自检：归并与异常")
+    p = sub.add_parser("check", parents=[common], help="数据自检：归并与异常")
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("stats", help="个人统计")
+    p = sub.add_parser("stats", parents=[common], help="个人统计")
     p.add_argument("--student", required=True)
     p.add_argument("--node")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_stats)
 
-    p = sub.add_parser("class", help="班级汇总（支持排除本人）")
+    p = sub.add_parser("class", parents=[common], help="班级汇总（支持排除本人）")
     p.add_argument("--class", dest="class_id", required=True)
     p.add_argument("--node")
     p.add_argument("--exclude", help="逗号分隔的排除学生编号")
     p.set_defaults(func=cmd_class)
 
-    p = sub.add_parser("evidence", help="证据查询")
+    p = sub.add_parser("evidence", parents=[common], help="证据查询")
     p.add_argument("--student")
     p.add_argument("--question")
     p.add_argument("--record")
@@ -175,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_evidence)
 
-    p = sub.add_parser("mapping", help="导出字段映射 CSV")
+    p = sub.add_parser("mapping", parents=[common], help="导出字段映射 CSV")
     p.add_argument("--out")
     p.set_defaults(func=cmd_mapping)
     return parser

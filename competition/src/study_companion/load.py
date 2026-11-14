@@ -105,6 +105,16 @@ def _to_int(value: str) -> Optional[int]:
     return int(value)
 
 
+def _to_int_checked(value: str, field: str, record_id: str) -> Optional[int]:
+    """整数解析失败转为带定位信息的 LoadError（而非裸 traceback）。"""
+    if value in ("", None):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        raise LoadError(f"{record_id} 的{field}不是整数: {value!r}")
+
+
 def _split_list(value: str) -> List[str]:
     return [part.strip() for part in value.replace("；", "、").split("、") if part.strip()]
 
@@ -241,9 +251,10 @@ def load_records(data_dir: Path) -> List[AnswerRow]:
             record_id=r["记录编号"], student_id=r["学生编号"],
             material_id=r["材料编号"], theme_recorded=r["主题编号"],
             node_id=r["节点编号"], event_id=r["作答事件编号"],
-            revision=_to_int(r["修订版本"]) or 1,
+            revision=_to_int_checked(r["修订版本"], "修订版本", r["记录编号"]) or 1,
             submitted_at=r["模拟提交时间"], scoring_status=status,
-            score=_to_int(r["得分"]), full_score=_to_int(r["满分"]),
+            score=_to_int_checked(r["得分"], "得分", r["记录编号"]),
+            full_score=_to_int_checked(r["满分"], "满分", r["记录编号"]),
             final_answer=r["学生最终作答"],
             solution_steps=[s for s in r["解答过程"].splitlines() if s.strip()],
             point_scores=parse_point_scores(r["评分点得分"]),

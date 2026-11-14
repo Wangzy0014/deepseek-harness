@@ -65,5 +65,7 @@ build_valid_records` 获取"当前有效记录"，禁止各自清洗。清洗包
 ## 5. 输出与接口（下游模块使用方式）
 
 当前有效记录（JSON/CSV）、质量报告、学生×节点统计、覆盖表、证据查询
-（学生/题目/记录/指标，含全部历史版本）。命令行入口：`check / stats /
-class / evidence / pipeline / mapping`，Python 入口见 `competition/README.md`。
+（学生/题目/记录/指标，含全部历史版本）、步骤诊断线索（末步结论与最终
+作答的矛盾筛查，供诊断模块定位，不参与统计口径）。命令行入口：`check /
+stats / class / evidence / pipeline / mapping`，Python 入口见
+`competition/README.md`（顶层包已导出常用函数）。

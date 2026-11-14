@@ -89,10 +89,16 @@ for vr in clean.valid_records:                       # 当前有效记录
   `shared/contracts/`（合成数据生成的样例）可安全入库。
 - 需要给队友传真实样例时走队内渠道（微信等），不走仓库。
 
+## 开发规范（防再犯）
+
+- **启用 pre-push 钩子**（克隆后执行一次）：`git config core.hooksPath .githooks`
+  —— competition 测试不绿会直接拒绝推送（历史上发生过三次带红推送，机制根治）。
+- README 的测试计数有守卫测试盯着：改测试数不同步文档，测试直接挂。
+
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 464 项：固定样例 63 + 随机性质测试 401
+python3 -m pytest tests/            # 476 项：固定样例 75 + 随机性质测试 401
 ```
 
 - `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
@@ -104,7 +110,7 @@ python3 -m pytest tests/            # 464 项：固定样例 63 + 随机性质�
   有效得分、覆盖自洽、处置幂等。核心逻辑不依赖"我造的例子"，
   对任意契约内数据成立。
 - 处置策略切换：`--repair-points`（方案 B，默认方案 A；切换需全队拍板，
-  备忘录见本机 outputs/samples/disposition_memo.md）。
+  备忘录见本机 outputs/samples/disposition_memo.md）。参数在子命令前后均可。
 
 真实数据自检（本机运行）：
 

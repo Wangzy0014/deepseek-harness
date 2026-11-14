@@ -1,0 +1,18 @@
+#!/bin/sh
+# 拒绝带红推送：competition 测试失败时中止 push
+# 启用（每人克隆后执行一次）：git config core.hooksPath .githooks
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ ! -d "$ROOT/competition" ]; then
+    exit 0
+fi
+if ! python3 -c "import pytest" >/dev/null 2>&1; then
+    echo "⚠ 未安装 pytest，跳过 pre-push 检查" >&2
+    exit 0
+fi
+cd "$ROOT/competition" || exit 0
+if ! python3 -m pytest tests/ -q >/dev/null 2>&1; then
+    echo "✗ competition 测试未通过，已阻止本次推送。修好再 push：" >&2
+    python3 -m pytest tests/ -q 2>&1 | tail -15 >&2
+    exit 1
+fi
+exit 0

@@ -86,13 +86,14 @@ def answer_process_leads(dataset: Dataset, clean: CleanResult) -> List[Dict]:
     return leads
 
 
-def leads_payload(dataset: Dataset, clean: CleanResult) -> Dict:
+def build_leads_payload(lead_list: List[Dict]) -> Dict:
+    """组装线索输出（说明 + 数量 + 线索清单）。"""
     return {
         "说明": "步骤诊断线索（数据处理模块产出，供步骤诊断定位"
                 "「答案与过程矛盾」用）。过滤口径：已评分且计入统计口径的"
                 "记录，末步结论与最终作答在剥离序号/空白/句读/括号/单位词/"
                 "检验行后仍不一致。仍可能含表述差异，需人工/智能体甄别；"
                 "仅作线索，不影响统计口径（口径异常以验收书 6 条为准）。",
-        "数量": None,  # 由调用方填充
-        "线索": None,
+        "数量": len(lead_list),
+        "线索": lead_list,
     }

@@ -10,7 +10,7 @@ from .clean import CleanResult
 from .schema import Dataset, ValidRecord
 
 
-def _record_view(vr: ValidRecord, dataset: Dataset) -> Dict:
+def record_view(vr: ValidRecord, dataset: Dataset) -> Dict:
     row = vr.record
     question = dataset.question(row.material_id)
     return {
@@ -95,7 +95,7 @@ def query(
             q = dataset.question(row.material_id)
             if q is None or q.indicator_id != indicator:
                 continue
-        results.append(_record_view(vr, dataset))
+        results.append(record_view(vr, dataset))
 
     return {
         "查询条件": {

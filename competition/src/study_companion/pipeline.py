@@ -108,7 +108,7 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
     vr_rows = valid_record_rows(clean_result)
     _write_csv(out / "valid_records.csv", vr_rows, list(vr_rows[0].keys()))
     _write_json(out / "valid_records.json",
-                [evidence_mod._record_view(vr, dataset) for vr in clean_result.valid_records])
+                [evidence_mod.record_view(vr, dataset) for vr in clean_result.valid_records])
     paths["当前有效记录"] = [out / "valid_records.csv", out / "valid_records.json"]
 
     _write_json(out / "quality_report.json", report.to_dict())
@@ -131,10 +131,8 @@ def run_pipeline(data_dir: Path, output_dir: Path, samples: bool = True,
 def _write_samples(dataset, clean_result, out: Path, paths: Dict) -> None:
     # 步骤诊断线索（"末步结论 vs 最终作答"矛盾，供诊断模块定位）
     from . import leads as leads_mod
-    lead_list = leads_mod.answer_process_leads(dataset, clean_result)
-    payload = leads_mod.leads_payload(dataset, clean_result)
-    payload["数量"] = len(lead_list)
-    payload["线索"] = lead_list
+    payload = leads_mod.build_leads_payload(
+        leads_mod.answer_process_leads(dataset, clean_result))
     _write_json(out / "samples" / "answer_process_conflicts.json", payload)
     paths["步骤诊断线索"] = out / "samples" / "answer_process_conflicts.json"
 
