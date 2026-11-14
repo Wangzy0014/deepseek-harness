@@ -27,7 +27,7 @@ def load_raw(data_dir: Path):
     }
 
 
-def analyze(data_dir: Path):
+def analyze(data_dir: Path, repair_consistent_points: bool = False):
     raw = load_raw(data_dir)
     records, bank, nodes = raw["records"], raw["bank"], raw["nodes"]
 
@@ -70,10 +70,20 @@ def analyze(data_dir: Path):
             issues.append("semantic_review")
         blocking = any(i in issues for i in (
             "score_exceeds_full", "total_points_mismatch", "node_out_of_scope"))
+        # 策略B：得分超满分但评分点合计==满分 -> 以评分点合计为有效得分
+        effective = sc
+        if ("score_exceeds_full" in issues and repair_consistent_points
+                and r["评分点得分"] and full is not None):
+            pts_sum = sum(int(p.split("=")[1]) for p in
+                          r["评分点得分"].split("；") if "=" in p)
+            if pts_sum == full:
+                issues.append("score_repaired_from_points")
+                effective = pts_sum
+                blocking = False
         in_stats = (r["评分状态"] == "已评分" and not blocking)
         out_records[r["记录编号"]] = {
             "学生": r["学生编号"], "节点": r["节点编号"], "材料": r["材料编号"],
-            "主题": theme, "状态": r["评分状态"], "得分": sc, "满分": full,
+            "主题": theme, "状态": r["评分状态"], "得分": effective, "满分": full,
             "进统计": in_stats, "异常": sorted(issues),
         }
 

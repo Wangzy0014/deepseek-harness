@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 from .clean import (
     CleanResult,
     DISPOSITIONS,
-    ISSUE_SEMANTIC_REVIEW,
 )
 from .schema import (
     Dataset,

@@ -126,8 +126,15 @@ def generate_dataset(seed: int, out_dir: Path) -> Path:
                 if r < 0.32:                     # 注入：主题誊录错误
                     wrong = next(t for t in ("PT01", "PT02", "PT03") if t != theme)
                     add_record(sid, node, mid, 记录主题=wrong)
-                elif r < 0.38:                   # 注入：得分超满分
-                    add_record(sid, node, mid, 得分=full + rng.randint(1, 9))
+                elif r < 0.38:                   # 注入：得分超满分（两种形态）
+                    # 形态1：评分点合计==满分（策略B可修正）
+                    # 形态2：评分点跟随总分或缺失（两策略下都隔离）
+                    if qmap[mid][1] == "解答题" and rng.random() < 0.5:
+                        pts_full = "；".join(f"{mid}P{k}=1" for k in (1, 2, 3))
+                        add_record(sid, node, mid,
+                                   得分=full + rng.randint(1, 3), 评分点=pts_full)
+                    else:
+                        add_record(sid, node, mid, 得分=full + rng.randint(1, 9))
                 elif r < 0.44 and qmap[mid][1] == "解答题":
                     # 注入：评分点合计与总分矛盾（合法点值合计不等于得分）
                     bad = "；".join(f"{mid}P{k}=1" for k in (1, 2, 3))
@@ -172,12 +179,13 @@ def _module_view(dataset, clean):
     return records
 
 
+@pytest.mark.parametrize("repair_points", [False, True], ids=["policyA", "policyB"])
 @pytest.mark.parametrize("seed", range(200))
-def test_random_equivalence(seed, tmp_path):
+def test_random_equivalence(seed, tmp_path, repair_points):
     data_dir = generate_dataset(seed, tmp_path / f"d{seed}")
     dataset = load_all(data_dir)
-    clean = build_valid_records(dataset)
-    oracle = reference_impl.analyze(data_dir)
+    clean = build_valid_records(dataset, repair_consistent_points=repair_points)
+    oracle = reference_impl.analyze(data_dir, repair_consistent_points=repair_points)
 
     # 1) 逐记录等价：当前记录集合、处置、异常类型
     mine = _module_view(dataset, clean)
