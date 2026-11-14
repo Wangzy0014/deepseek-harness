@@ -90,12 +90,18 @@ for vr in clean.valid_records:                       # 当前有效记录
 ## 测试与验收自检
 
 ```sh
-python3 -m pytest tests/            # 57 项：加载/清洗/统计/覆盖/证据/管线/验收项/数据安全
+python3 -m pytest tests/            # 258 项：固定样例 57 + 随机性质测试 201
 ```
 
-`tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
-状态区别、统计复算、比较口径、覆盖与范围、通用性：打乱行序/换学生/
-重复加载结果不变）。真实数据自检（本机运行）：
+- `tests/test_acceptance.py` 逐条对应验收书检查项（版本归并、异常处理、
+  状态区别、统计复算、比较口径、覆盖与范围、通用性）。
+- `tests/test_properties.py` **随机性质测试**：200 套随机数据集（随机注入
+  各类异常、修订链、无记录）与 `tests/reference_impl.py`（按验收书条文
+  独立实现的预言机，不依赖被测代码）逐记录、逐统计、逐覆盖全量对拍，
+  并校验核心不变量：无损归并、全局总量守恒、隔离无得分、覆盖自洽、
+  处置幂等。核心逻辑不依赖"我造的例子"，对任意契约内数据成立。
+
+真实数据自检（本机运行）：
 
 ```sh
 PYTHONPATH=src python3 -m study_companion check
