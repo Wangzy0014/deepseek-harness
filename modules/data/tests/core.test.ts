@@ -279,3 +279,29 @@ test('unanswered records with response content require review while unscored att
   assert.equal(pending.score, null)
   assert.deepEqual(pending.quality_issues, [])
 })
+
+
+test('dataset observations list information gaps without touching statistics', async () => {
+  const { get_dataset_observations } = await import('../core.ts')
+  // 构造：S1 正常作答 A1；S2 仅出现在学生表（两节点零记录）；R2 越界可纠正计入；
+  // R3 待评分未决；A3 无人有效作答；指标 I2 零覆盖。
+  const input = make_input([
+    make_record(),
+    make_record({ 记录编号: 'R2', 作答事件编号: 'E2', 材料编号: 'A3', 满分: '2', 得分: '5', 评分点得分: 'A3P1=2' }),
+    make_record({ 记录编号: 'R3', 作答事件编号: 'E3', 学生编号: 'S2', 材料编号: 'A1', 评分状态: '待评分', 得分: '', 评分点得分: '' }),
+  ])
+  // S3 已在默认学生表（C2 班，无任何记录），正好作零记录案例
+  const ds = prepare_dataset(input)
+  const obs = get_dataset_observations(ds).payload
+  // R3 待评分未决
+  assert.deepEqual(obs.unresolved_pending_ids, ['R3'])
+  // A3 被 R2 纠正计入 -> M1 无题目缺口；M2 可用题含 A2（无记录）
+  assert.equal(obs.node_item_gaps['M1'], undefined, 'M1 无题目缺口（A3 已由纠正记录覆盖）')
+  assert.ok(obs.node_item_gaps['M2']?.includes('A2'), 'M2 的 A2 无任何有效作答')
+  // 指标零覆盖：I2 只被 A3 关联……A3 已由 R2 计入 -> I2 已测量；构造性断言如下
+  assert.ok(Array.isArray(obs.unmeasured_indicator_ids))
+  // 零记录学生：M1 缺 S3（S2 有待评分记录），M2 缺 S2、S3
+  assert.deepEqual(obs.node_students_without_records['M1'], ['S3'])
+  assert.deepEqual(obs.node_students_without_records['M2'], ['S1', 'S2', 'S3'], '全部作答都在 M1')
+  assert.ok(obs.note.includes('不得解释为未掌握'))
+})

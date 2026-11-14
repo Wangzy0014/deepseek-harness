@@ -132,3 +132,12 @@ export interface EvidenceQuery {
 export interface EvidencePayload {
   records: EvidenceRecord[]
 }
+
+/** 非阻塞数据观察：记录不足 / 未测量的机器化清单（不改统计口径）。 */
+export interface DatasetObservations {
+  unresolved_pending_ids: string[]
+  node_item_gaps: Record<string, string[]>
+  unmeasured_indicator_ids: string[]
+  node_students_without_records: Record<string, string[]>
+  note: string
+}

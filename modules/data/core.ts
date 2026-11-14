@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type {
   CsvRow, DatasetInput, EvidencePayload, EvidenceQuery, EvidenceRecord, PreparedDataset,
   PrepareOptions, QualityIssue, ResultEnvelope, ScoreSummary, StudentScope, StudentStats,
+  DatasetObservations,
 } from './types.ts'
 
 class DatasetInputError extends Error {
@@ -416,4 +417,58 @@ export function get_evidence(dataset: PreparedDataset, query: EvidenceQuery): Re
   if (review) limitations.push('包含待复核记录；原始得分与答案仅用于核对，不可直接形成能力结论。')
   if (records.length === 0) limitations.push('指定筛选条件下没有匹配的作答记录。')
   return envelope(dataset, scope, { records }, review ? 'needs_review' : records.length === 0 ? 'insufficient_data' : 'ok', records.map(record => record.record_id), limitations)
+}
+
+/**
+ * 数据观察（与 Python 参考实现 quality.build_observations 口径一致）：
+ * 未决待评分 / 节点×题目无有效作答（按节点分别判断）/ 指标零覆盖 /
+ * 节点×学生零记录。仅列信息缺口，不参与统计口径，不得推断为未掌握。
+ */
+export function get_dataset_observations(dataset: PreparedDataset): ResultEnvelope<DatasetObservations> {
+  const pending = dataset.current
+    .filter(record => record.grading_status === '待评分')
+    .map(record => record.record_id).sort()
+
+  const inStats = new Set(dataset.current
+    .filter(record => record.include_in_statistics)
+    .map(record => `${record.node_id}\u0000${record.item_id}`))
+  const nodeItemGaps: Record<string, string[]> = {}
+  for (const node of dataset.input.nodes) {
+    const nodeId = node['节点编号'] ?? ''
+    const gaps = ids(node['可用题目编号'] ?? '').filter(item => !inStats.has(`${nodeId}\u0000${item}`)).sort()
+    if (gaps.length > 0) nodeItemGaps[nodeId] = gaps
+  }
+
+  const measuredIndicators = new Set(dataset.current
+    .filter(record => record.include_in_statistics)
+    .map(record => dataset.input.items.find(item => item['材料编号'] === record.item_id)?.['指标编号'] ?? '')
+    .filter(Boolean))
+  const unmeasured = dataset.input.requirements
+    .map(row => row['指标编号'] ?? '')
+    .filter(Boolean).filter(id => !measuredIndicators.has(id)).sort()
+
+  const seen = new Map<string, Set<string>>()
+  for (const record of dataset.current) {
+    if (!seen.has(record.node_id)) seen.set(record.node_id, new Set())
+    seen.get(record.node_id)!.add(record.student_id)
+  }
+  const noRecords: Record<string, string[]> = {}
+  for (const node of dataset.input.nodes) {
+    const nodeId = node['节点编号'] ?? ''
+    const missing = dataset.input.students
+      .map(row => row['学生编号'] ?? '')
+      .filter(id => id && !seen.get(nodeId)?.has(id)).sort()
+    if (missing.length > 0) noRecords[nodeId] = missing
+  }
+
+  const payload: DatasetObservations = {
+    unresolved_pending_ids: pending,
+    node_item_gaps: nodeItemGaps,
+    unmeasured_indicator_ids: unmeasured,
+    node_students_without_records: noRecords,
+    note: '以上为信息不足清单，不参与统计口径；分析时须注明"暂不能确定"，不得解释为未掌握或全部掌握。',
+  }
+  return envelope(dataset, { scope: 'dataset' }, payload, 'ok', [], [
+    '观察仅列信息缺口，不改变任何统计口径。',
+  ])
 }

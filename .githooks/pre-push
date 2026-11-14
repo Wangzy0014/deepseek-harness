@@ -1,18 +1,42 @@
 #!/bin/sh
-# 拒绝带红推送：competition 测试失败时中止 push
+# 拒绝带红推送：改动涉及的测试不绿则中止 push
 # 启用（每人克隆后执行一次）：git config core.hooksPath .githooks
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ ! -d "$ROOT/competition" ]; then
-    exit 0
+cd "$ROOT" || exit 0
+
+# 逐个 ref 检查本次推送涉及的路径
+CHANGED=$(git diff --name-only "$LOCAL_SHA" "$REMOTE_SHA" 2>/dev/null \
+  | git diff --name-only origin/master...HEAD 2>/dev/null)
+SCOPE=$(git diff --name-only origin/master...HEAD 2>/dev/null || echo "modules/ competition/")
+
+run_python=0
+run_ts=0
+case "$SCOPE" in
+  *competition*) run_python=1 ;;
+esac
+case "$SCOPE" in
+  *modules/*) run_ts=1 ;;
+esac
+
+if [ "$run_python" = 1 ]; then
+  if python3 -c "import pytest" >/dev/null 2>&1; then
+    (cd competition && python3 -m pytest tests/ -q >/dev/null 2>&1) || {
+      echo "✗ competition Python 测试未通过，已阻止推送。" >&2
+      exit 1
+    }
+  else
+    echo "⚠ 未安装 pytest，跳过 Python 检查" >&2
+  fi
 fi
-if ! python3 -c "import pytest" >/dev/null 2>&1; then
-    echo "⚠ 未安装 pytest，跳过 pre-push 检查" >&2
-    exit 0
-fi
-cd "$ROOT/competition" || exit 0
-if ! python3 -m pytest tests/ -q >/dev/null 2>&1; then
-    echo "✗ competition 测试未通过，已阻止本次推送。修好再 push：" >&2
-    python3 -m pytest tests/ -q 2>&1 | tail -15 >&2
-    exit 1
+
+if [ "$run_ts" = 1 ]; then
+  if command -v npm >/dev/null 2>&1 && [ -d modules/data/node_modules ]; then
+    npm run study:test >/dev/null 2>&1 || {
+      echo "✗ modules TS 测试未通过，已阻止推送。" >&2
+      exit 1
+    }
+  else
+    echo "⚠ TS 依赖未安装（modules/data/node_modules 缺失），跳过 TS 检查" >&2
+  fi
 fi
 exit 0
